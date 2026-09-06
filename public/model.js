@@ -39,6 +39,38 @@ export function diffDraft(draft) {
   return { added, removed, reordered, dirty: !!(added.length || removed.length || reordered) };
 }
 
+// Describe net changes, not drag history. Membership-only shifts must not be
+// mislabeled as reorders; new entries have a final position, not an original one.
+export function describeDraftChanges(draft) {
+  const diff = diffDraft(draft);
+  const originalPositions = new Map(draft.original.map((item, index) => [item.itemId, index + 1]));
+  const finalPositions = new Map(draft.items.map((item, index) => [item.itemId, index + 1]));
+  const retainedBefore = draft.original.filter((item) => finalPositions.has(item.itemId));
+  const ranksBefore = new Map(retainedBefore.map((item, index) => [item.itemId, index + 1]));
+  const retainedAfter = draft.items.filter((item) => originalPositions.has(item.itemId));
+  const orderChanges = retainedAfter.flatMap((item, index) => {
+    const fromRank = ranksBefore.get(item.itemId),
+      toRank = index + 1;
+    return fromRank === toRank
+      ? []
+      : [
+          {
+            item,
+            from: originalPositions.get(item.itemId),
+            to: finalPositions.get(item.itemId),
+            fromRank,
+            toRank,
+          },
+        ];
+  });
+  return {
+    ...diff,
+    additions: diff.added.map((item) => ({ item, to: finalPositions.get(item.itemId) })),
+    removals: diff.removed.map((item) => ({ item, from: originalPositions.get(item.itemId) })),
+    orderChanges,
+  };
+}
+
 export function moveSelection(items, selected, position) {
   const moving = items.filter((x) => selected.has(x.itemId));
   const rest = items.filter((x) => !selected.has(x.itemId));

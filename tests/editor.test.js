@@ -235,6 +235,28 @@ test('manual reorder, empty target and no-op commits verify exactly', async () =
   }
 });
 
+test('a copied addition and later existing-track reorders are both included in the committed final order', async () => {
+  const snapshots = [
+    snapshot(
+      'dest',
+      ['a', 'b', 'c', 'd'].map((id) => item(id)),
+    ),
+  ];
+  const newTrack = addition('12345678901');
+  const final = [item('d'), newTrack, item('c'), item('a'), item('b')];
+  const changes = prepareChanges(snapshots, [{ items: final }]);
+  assert.deepEqual(
+    changes[0].target.map((x) => x.itemId),
+    final.map((x) => x.itemId),
+  );
+  const { state, client } = fixture(snapshots);
+  await run(client, changes);
+  assert.deepEqual(
+    state.dest.items.map((x) => x.itemId),
+    ['d', 'added-0', 'c', 'a', 'b'],
+  );
+});
+
 test('write rate limit and submitted/confirmed reports apply to every mutation', async () => {
   const snapshots = [snapshot('one', [item('a'), item('b')])];
   const changes = prepareChanges(snapshots, [{ items: [addition('abcdefghijk'), item('b')] }]);

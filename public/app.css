@@ -693,6 +693,28 @@ td:last-child {
 .staged-addition a {
   flex: 1;
 }
+.change-description {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.change-position {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 10px;
+}
+.count-order {
+  color: var(--accent);
+}
+.order-changes {
+  margin-top: 10px;
+}
+.order-changes > summary {
+  cursor: pointer;
+  color: var(--accent);
+  font-size: 10px;
+}
 .buffer-controls {
   display: flex;
   flex-wrap: wrap;

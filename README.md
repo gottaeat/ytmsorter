@@ -75,6 +75,13 @@ IndexedDB; unchecked uses tab-session storage. Neither is encrypted by this app.
    the change set. Watch the timestamped check/write/confirmed/verify events.
 6. After any commit attempt, reload affected playlists before editing again.
 
+The buffer shows the net difference from the loaded snapshot, not one entry per
+mouse gesture. Additions show their **final position**; the expanded **Order
+changes** section lists existing tracks whose relative order changed, with
+loaded → final positions. Shifts caused only by inserting/removing other tracks
+are not mislabeled as reorders. **Revert order** keeps membership edits staged;
+workspace Undo reverses the last edit. Review still shows the complete final order.
+
 ### Split panes and drag/drop
 
 Loading a playlist opens another editor pane; clicking an already loaded playlist

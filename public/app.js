@@ -10,6 +10,7 @@ import {
 } from './persistence.js';
 import {
   diffDraft,
+  describeDraftChanges,
   parseVideoId,
   moveSelection,
   transferItems,
@@ -530,7 +531,7 @@ function renderChanges() {
   $('dirty-count').textContent = changed.length;
   $('change-list').replaceChildren();
   for (const d of changed) {
-    const diff = diffDraft(d);
+    const diff = describeDraftChanges(d);
     const block = node('div', undefined, 'change-block');
     block.append(
       node('h3', d.info.title),
@@ -538,15 +539,20 @@ function renderChanges() {
       node('p', `− ${diff.removed.length} removals`, 'count-remove'),
       node(
         'p',
-        `${diff.reordered ? 'Order changed' : 'Retained order unchanged'} · ≤ ${budget(d)} writes`,
+        `${diff.reordered ? `${diff.orderChanges.length} existing tracks changed relative order` : 'Existing tracks keep their relative order'} · ≤ ${budget(d)} writes`,
       ),
     );
     const locked = busy || !!state.pending || !hasWorkspaceLock || d.stale || !d.info.editable;
     if (diff.added.length) {
       const additions = node('ul', undefined, 'staged-additions');
-      for (const item of diff.added) {
+      for (const { item, to } of diff.additions) {
         const entry = node('li', undefined, 'staged-addition');
-        entry.append(node('span', '+', 'count-add'), videoLink(item));
+        const description = node('div', undefined, 'change-description');
+        description.append(
+          videoLink(item),
+          node('small', `Add at final position #${to}`, 'change-position'),
+        );
+        entry.append(node('span', '+', 'count-add'), description);
         const revert = node('button', 'Revert', 'revert-addition');
         revert.setAttribute('aria-label', `Revert addition of ${item.title} to ${d.info.title}`);
         revert.title =
@@ -568,9 +574,14 @@ function renderChanges() {
     }
     if (diff.removed.length) {
       const removals = node('ul', undefined, 'staged-additions');
-      for (const item of diff.removed) {
+      for (const { item, from } of diff.removals) {
         const entry = node('li', undefined, 'staged-addition');
-        entry.append(node('span', '−', 'count-remove'), videoLink(item));
+        const description = node('div', undefined, 'change-description');
+        description.append(
+          videoLink(item),
+          node('small', `Remove from loaded position #${from}`, 'change-position'),
+        );
+        entry.append(node('span', '−', 'count-remove'), description);
         const revert = node('button', 'Restore', 'revert-addition');
         revert.setAttribute('aria-label', `Revert removal of ${item.title} from ${d.info.title}`);
         revert.title =
@@ -588,6 +599,37 @@ function renderChanges() {
         removals.append(entry);
       }
       block.append(removals);
+    }
+    if (diff.orderChanges.length) {
+      const section = node('details', undefined, 'order-changes');
+      section.open = true;
+      section.append(node('summary', `ORDER CHANGES · ${diff.orderChanges.length} tracks`));
+      const list = node('ul', undefined, 'staged-additions');
+      for (const { item, from, to, fromRank, toRank } of diff.orderChanges) {
+        const entry = node('li', undefined, 'staged-addition');
+        const description = node('div', undefined, 'change-description');
+        description.append(
+          videoLink(item),
+          node(
+            'small',
+            from === to
+              ? `Still #${to} · relative order ${fromRank} → ${toRank}`
+              : `Position #${from} → #${to}`,
+            'change-position',
+          ),
+        );
+        entry.append(node('span', '↕', 'count-order'), description);
+        list.append(entry);
+      }
+      section.append(
+        list,
+        node(
+          'p',
+          'Loaded → final positions. Lists relative-order changes, not shifts caused only by additions/removals.',
+          'buffer-note',
+        ),
+      );
+      block.append(section);
     }
     const controls = node('div', undefined, 'buffer-controls');
     if (diff.reordered) {
