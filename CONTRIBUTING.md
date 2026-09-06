@@ -51,5 +51,5 @@ Review `git status --short` and the exact staged diff. The ignore files exclude
 known credential exports and workspace backups, but cannot detect every secret.
 Do not add a whole browser profile or Docker volume. Scan repository history if
 it has previously contained credentials; deleting a working-tree file does not
-erase history. Enable private vulnerability reporting on GitHub. CI checks code
-and builds the image; publishing images/releases is intentionally not automated.
+erase history. Enable private vulnerability reporting on GitHub. Run the checks
+and Docker build locally; GitHub Actions and release publishing are not automated.

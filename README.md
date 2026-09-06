@@ -247,7 +247,7 @@ npm start
 ```
 
 Node.js 24 is required. Docker builds run the syntax checks and automated tests.
-CI also checks formatting. Tests use fake YouTube adapters: no accounts, cookies
+Run the formatting check locally. Tests use fake YouTube adapters: no accounts, cookies
 or live playlist writes. For an isolated UI demo:
 
 ```bash
