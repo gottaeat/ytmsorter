@@ -134,6 +134,8 @@ test('layout sanitizes foreign IDs and unsafe sizes; closed/minimized panes rema
   assert.equal(layout.weights.PLone, 1);
   assert.equal(layout.consoleHidden, true);
   assert.deepEqual(normalizeLayout({ open: [] }, drafts, 'PLone').open, []);
+  assert.deepEqual(normalizeLayout({}, drafts, 'PLone').open, []);
+  assert.equal(normalizeLayout({ open: [], weights: { PLone: 3 } }, drafts).weights.PLone, 3);
   const restored = readBackup(createBackup({ library: [], drafts, active: null, layout }));
   assert.equal(restored.active, null);
   assert.deepEqual(restored.layout, layout);

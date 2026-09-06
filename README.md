@@ -10,6 +10,10 @@ resize or minimize the surrounding panels like an editor workbench.
 Your browser owns the workspace. Docker is a disposable worker. No Google Cloud
 project, OAuth setup, database, data volume, analytics, or remote UI assets.
 
+![Grayscale demo workbench with two playlist panes and staged additions and reorders](docs/demo-workbench.jpg)
+
+_Synthetic demo data; no personal account or cookies. Activity panel minimized._
+
 > This uses YouTube's unofficial internal API through
 > [YouTube.js](https://github.com/LuanRT/YouTube.js). It can break, and no tool can
 > promise that cookie-based automation will never trigger account restrictions.
@@ -42,7 +46,7 @@ volume in this version. Do not restart during a commit unless necessary.
 3. Expand **Request Headers** and copy the **Cookie** header value. If it is not
    visible, choose another authenticated YouTube request—not a Google Accounts
    request or a static image. It is not under Response Headers.
-4. Paste it into ytmsorter and click **Connect cookies**.
+4. Open **Session**, paste it into the overlay, and click **Connect / replace cookies**.
 
 The Application → Cookies table lists individual values, but the request header
 is the simplest way to copy the set actually sent by your browser. Do not use
@@ -59,6 +63,13 @@ Cookies are powerful credentials. Paste them only into your local app, never
 chat, issues, or a public website. **Remember in this browser** stores them in
 IndexedDB; unchecked uses tab-session storage. Neither is encrypted by this app.
 **Disconnect** forgets the app's credentials, not your Google session.
+
+The header shows the selected YouTube channel name returned during connection.
+**Session → Verify saved session** refreshes it without pasting cookies again.
+On reload, **Saved session** shows the cached name, not a new authentication check.
+The grayscale indicator gently pulses (unless reduced motion is enabled); it is
+not a polling indicator. If YouTube omits the selected name, the UI says so rather
+than guessing another channel. Names stay with browser credentials, outside exports.
 
 ## Workbench workflow
 
@@ -84,6 +95,8 @@ workspace Undo reverses the last edit. Review still shows the complete final ord
 
 ### Split panes and drag/drop
 
+The middle editor starts empty on every page load; saved drafts and staged changes
+remain in the sidebar and commit buffer. Choose the playlists you want to open.
 Loading a playlist opens another editor pane; clicking an already loaded playlist
 focuses or reopens its pane without fetching again. Each pane has its own filter,
 selection and scroll position. The highlighted pane is active: the shared Sort,
@@ -105,7 +118,7 @@ artist options, explicit positions, additions, and copy/transfer controls.
   reset its size. **Reset layout** restores default panels and opens loaded drafts.
 - **−** minimizes a playlist to a vertical tab; click it to restore. **×** closes
   only the view, never the draft. Library/Commit buffer/Activity buttons restore
-  minimized utility panels. Pane sizes, open/minimized state and drag mode persist
+  minimized utility panels. Pane sizes, utility-panel visibility and drag mode persist
   through reloads and workspace exports. Selections, filters and scroll positions
   are kept while the page is open, not across reloads.
 

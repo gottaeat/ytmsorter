@@ -97,6 +97,10 @@ const current = () =>
 const dirty = () => Object.values(state.drafts).filter((d) => diffDraft(d).dirty);
 const newId = () => `new:${crypto.randomUUID()}`;
 state.layout = normalizeLayout(state.layout, state.drafts, state.active);
+// Restore data and dimensions, but let the user choose which editors to open.
+state.layout.open = [];
+state.layout.minimized = [];
+state.active = null;
 const paneUI = createPaneWorkspace({
   getState: () => state,
   isLocked: () => busy || !!state.pending || !hasWorkspaceLock,
@@ -192,8 +196,8 @@ async function api(path, body, { quiet = false } = {}) {
   if (!response.ok) {
     if (response.status === 401) {
       authenticated = false;
-      $('connection-state').textContent = 'SESSION REJECTED';
-      $('connect-panel').hidden = false;
+      setConnection('SESSION REJECTED', 'rejected');
+      openSession();
     }
     const error = new Error(data.error || `Local request failed (${response.status}).`);
     error.status = response.status;
@@ -207,6 +211,7 @@ async function api(path, body, { quiet = false } = {}) {
 async function operation(label, action) {
   if (busy || state.pending || !hasWorkspaceLock) return;
   busy = true;
+  if ($('connect-panel').open) $('session-error').hidden = true;
   $('operation-state').textContent = label.toUpperCase();
   log(label, 'read');
   renderControls();
@@ -218,6 +223,10 @@ async function operation(label, action) {
     await action();
   } catch (error) {
     log(error.message, 'error');
+    if ($('connect-panel').open) {
+      $('session-error').textContent = error.message;
+      $('session-error').hidden = false;
+    }
   } finally {
     clearInterval(timer);
     busy = false;
@@ -718,6 +727,7 @@ function renderControls() {
   $('reload').disabled = !d || locked || !authenticated;
   for (const id of ['load', 'library-refresh']) $(id).disabled = locked || !authenticated;
   for (const id of ['connect', 'disconnect', 'clear-workspace']) $(id).disabled = locked;
+  $('verify-session').disabled = locked || !credentials;
   $('selection-count').textContent = `${selected.size} selected`;
   const destination = $('destination').value;
   $('destination').replaceChildren(node('option', 'Choose loaded destination…'));
@@ -925,9 +935,51 @@ $('clear-workspace').onclick = () => {
   render();
   log('Local workspace cleared. YouTube unchanged.');
 };
-$('session-toggle').onclick = () => {
-  $('connect-panel').hidden = !$('connect-panel').hidden;
-};
+function setConnection(label, status) {
+  $('connection-state').textContent = label;
+  $('connection-state').dataset.state = status;
+}
+function sessionName() {
+  return typeof credentials?.identity?.name === 'string' ? credentials.identity.name : null;
+}
+function openSession() {
+  $('session-error').hidden = true;
+  $('session-identity').textContent = credentials
+    ? sessionName()
+      ? `Saved channel: ${sessionName()}`
+      : 'Saved cookies · verify to identify the channel.'
+    : 'No saved session.';
+  $('account-index').value = credentials?.accountIndex ?? 0;
+  $('channel-id').value = credentials?.channelId ?? '';
+  if (!$('connect-panel').open) $('connect-panel').showModal();
+}
+async function storeCredentials(nextCredentials) {
+  if ($('remember-cookies').checked) {
+    await writeRecord('credentials', nextCredentials);
+    sessionStorage.removeItem('ytm-session-credentials');
+  } else {
+    sessionStorage.setItem('ytm-session-credentials', JSON.stringify(nextCredentials));
+    await writeRecord('credentials', undefined);
+  }
+  credentials = nextCredentials;
+}
+function connected() {
+  authenticated = true;
+  setConnection(`CONNECTED / ${sessionName() || 'CHANNEL NAME UNAVAILABLE'}`, 'connected');
+  $('connect-panel').close();
+}
+$('session-toggle').onclick = openSession;
+$('session-close').onclick = () => $('connect-panel').close();
+$('connect-panel').addEventListener('close', () => {
+  $('cookies').value = '';
+});
+$('verify-session').onclick = () =>
+  operation('Checking saved session with YouTube…', async () => {
+    const result = await api('/api/connect', credentials);
+    await storeCredentials({ ...credentials, identity: result.identity });
+    connected();
+    log('Saved session verified. Channel name updated; playlists unchanged.', 'read');
+  });
 $('connect').onclick = () =>
   operation('Validating cookies with YouTube…', async () => {
     const nextCredentials = {
@@ -935,19 +987,10 @@ $('connect').onclick = () =>
       accountIndex: Number($('account-index').value),
       channelId: $('channel-id').value.trim(),
     };
-    await api('/api/connect', nextCredentials);
-    if ($('remember-cookies').checked) {
-      await writeRecord('credentials', nextCredentials);
-      sessionStorage.removeItem('ytm-session-credentials');
-    } else {
-      sessionStorage.setItem('ytm-session-credentials', JSON.stringify(nextCredentials));
-      await writeRecord('credentials', undefined);
-    }
-    credentials = nextCredentials;
+    const result = await api('/api/connect', nextCredentials);
+    await storeCredentials({ ...nextCredentials, identity: result.identity });
     $('cookies').value = '';
-    authenticated = true;
-    $('connection-state').textContent = 'SESSION CONNECTED / BROWSER-OWNED';
-    $('connect-panel').hidden = true;
+    connected();
     log('Session accepted. Library fetch and playlist loading are on demand.', 'read');
   });
 $('disconnect').onclick = () =>
@@ -957,7 +1000,8 @@ $('disconnect').onclick = () =>
     credentials = null;
     $('cookies').value = '';
     authenticated = false;
-    $('connection-state').textContent = 'DISCONNECTED';
+    setConnection('DISCONNECTED', 'disconnected');
+    $('session-identity').textContent = 'No saved session.';
     log('Browser-stored credentials removed. Drafts remain; YouTube itself was not signed out.');
   });
 $('log-clear').onclick = () => {
@@ -1270,7 +1314,7 @@ $('help').onclick = () => {
     ],
     [
       'Pane layout',
-      'Drag dividers to resize; arrow keys work on focused dividers and double-click resets sizes. − minimizes a playlist to a vertical tab; × closes its view but keeps its draft. Use Library / Commit buffer / Activity to restore utility panels. Layout persists through reloads. Reset layout shows all loaded drafts.',
+      'Drag dividers to resize; arrow keys work on focused dividers and double-click resets sizes. − minimizes a playlist to a vertical tab; × closes its view but keeps its draft. Use Library / Commit buffer / Activity to restore utility panels. Sizes persist, but the middle editor starts empty on reload. Reset layout shows all loaded drafts.',
     ],
     [
       'Persistence',
@@ -1346,12 +1390,17 @@ try {
   authenticated = !!credentials || session.demo;
   maxUpdates = session.maxUpdates;
   writeDelayMs = session.writeDelayMs;
-  $('connection-state').textContent = session.demo
-    ? 'DEMO / NO YOUTUBE CALLS'
-    : authenticated
-      ? 'BROWSER SESSION / CHECK ON REQUEST'
-      : 'DISCONNECTED';
-  $('connect-panel').hidden = authenticated;
+  setConnection(
+    session.demo
+      ? 'DEMO / Demo operator'
+      : authenticated
+        ? `SAVED SESSION / ${sessionName() || 'VERIFY TO IDENTIFY'}`
+        : 'DISCONNECTED',
+    session.demo ? 'demo' : authenticated ? 'saved' : 'disconnected',
+  );
+  $('connection-state').title =
+    'Saved sessions are checked on request, not polled. Use Session → Verify saved session to refresh the channel name.';
+  if (!authenticated) openSession();
   $('version').textContent = `v${session.version} · STATELESS WORKER`;
   if (hasWorkspaceLock && state.pending?.instanceId !== workerInstance && state.pending) {
     finishInterrupted(

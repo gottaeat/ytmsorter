@@ -4,7 +4,28 @@ import {
   parseCookies,
   createAuthenticatedFetch,
   AuthenticationRequiredError,
+  selectedAccountIdentity,
 } from '../src/auth.js';
+
+test('session identity uses only the selected enabled channel and exposes only its display name', () => {
+  assert.deepEqual(
+    selectedAccountIdentity([
+      { account_name: 'Wrong channel', is_selected: false },
+      {
+        account_name: { toString: () => '  Operator  ' },
+        is_selected: true,
+        email: 'private@example.test',
+      },
+    ]),
+    { name: 'Operator' },
+  );
+  assert.equal(selectedAccountIdentity([{ account_name: 'Not selected' }]), null);
+  assert.equal(
+    selectedAccountIdentity([{ account_name: 'Disabled', is_selected: true, is_disabled: true }]),
+    null,
+  );
+  assert.equal(selectedAccountIdentity([{ is_selected: true }]), null);
+});
 
 test('authenticated requests detect signed-out responses and 401 without exposing credentials', async () => {
   for (const response of [

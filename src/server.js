@@ -104,13 +104,13 @@ export function createApp({ editorClientFactory, instanceId, demo = false } = {}
   app.post('/api/connect', requireJson, async (request, response) => {
     if (app.locals.worker.busy)
       return response.status(409).json({ error: 'Wait for the current commit to finish.' });
-    if (demo) return response.json({ connected: true });
-    await connectCookies(
+    if (demo) return response.json({ connected: true, identity: { name: 'Demo operator' } });
+    const result = await connectCookies(
       request.body?.cookies,
       request.body?.accountIndex ?? 0,
       request.body?.channelId ?? '',
     );
-    response.json({ connected: true });
+    response.json(result);
   });
 
   app.get('/api/session', (request, response) => {

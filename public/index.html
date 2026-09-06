@@ -17,8 +17,8 @@
     <header class="masthead">
       <h1>YT<span>/</span> PLAYLIST CONTROL</h1>
       <span class="machine-label">LOCAL CONSOLE · STAGED WRITES</span
-      ><span id="connection-state">CHECKING SESSION</span
-      ><button id="session-toggle">Session</button>
+      ><span id="connection-state" role="status" data-state="checking">CHECKING SESSION</span
+      ><button id="session-toggle" aria-haspopup="dialog">Session</button>
     </header>
     <nav class="workspace-bar" aria-label="Workspace tools">
       <span id="save-state" role="status">OPENING BROWSER STORAGE…</span
@@ -47,8 +47,13 @@
       This workspace is open in another tab, or this browser does not support safe tab locking.
       Editing is disabled here. Close the other tab and refresh.
     </p>
-    <section id="connect-panel" class="connection" hidden>
-      <h2>Browser session</h2>
+    <dialog id="connect-panel" class="connection" aria-labelledby="session-title">
+      <div class="session-heading">
+        <h2 id="session-title">Browser session</h2>
+        <button id="session-close" aria-label="Close session dialog" autofocus>×</button>
+      </div>
+      <p id="session-identity" class="muted">No saved session.</p>
+      <p id="session-error" class="warning" role="alert" hidden></p>
       <p>
         Use the complete Cookie request header from a signed-in YouTube tab: DevTools → Network →
         reload → youtube.com request → Request Headers → Cookie. A Netscape cookies.txt export also
@@ -78,13 +83,14 @@
           >Delegated channel
           <input id="channel-id" autocomplete="off" placeholder="X-Goog-PageId (optional)" /></label
         ><button id="connect" class="accent">Connect / replace cookies</button
+        ><button id="verify-session">Verify saved session</button
         ><button id="disconnect">Disconnect</button>
       </div>
       <p class="muted">
         Unofficial YouTube interface. Slow writes reduce request volume; they cannot guarantee
         freedom from account restrictions.
       </p>
-    </section>
+    </dialog>
     <main id="workspace">
       <aside id="library-pane" class="library pane">
         <div class="pane-title">

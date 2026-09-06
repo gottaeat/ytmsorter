@@ -114,19 +114,26 @@ export function validateCredentials(input, accountIndex = 0, channelId = '') {
   return { cookie: parseCookies(input), accountIndex, channelId };
 }
 
+// Never guess from the first account: the list can include other channels.
+export function selectedAccountIdentity(accounts) {
+  const selected = accounts.find((account) => account.is_selected && !account.is_disabled);
+  const name = selected?.account_name?.toString().trim();
+  return name ? { name: name.slice(0, 200) } : null;
+}
+
 export async function connectCookies(input, accountIndex = 0, channelId = '') {
   const credentials = validateCredentials(input, accountIndex, channelId);
   const session = await createSession(credentials);
   try {
     const accounts = await session.account.getInfo(true);
     if (!accounts.length) throw new Error('No accounts');
+    return { connected: true, identity: selectedAccountIdentity(accounts) };
   } catch (error) {
     if (error instanceof AuthenticationRequiredError) throw error;
     throw new AuthenticationRequiredError(
       'YouTube did not accept these cookies. Copy fresh cookies from a signed-in YouTube tab.',
     );
   }
-  return { connected: true };
 }
 
 export async function authenticatedSession(auth) {
