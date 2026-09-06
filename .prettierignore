@@ -1,0 +1,11 @@
+node_modules
+package-lock.json
+client_secret*.json
+token*.json
+sort-plan.json
+.env*
+*cookies*
+browser-session.json
+data
+*.ytmsort.json
+ytmsorter-workspace-*.json

@@ -1,0 +1,22 @@
+services:
+  ytmsorter:
+    build:
+      context: .
+    init: true
+    restart: unless-stopped
+    ports:
+      - '127.0.0.1:3000:3000'
+    environment:
+      BASE_URL: 'http://localhost:3000'
+      MAX_UPDATES: '180'
+      WRITE_DELAY_MS: '1000'
+    stop_grace_period: 45s
+    mem_limit: 512m
+    pids_limit: 64
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true

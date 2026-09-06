@@ -1,0 +1,20 @@
+node_modules/
+npm-debug.log*
+.env
+.DS_Store
+
+# OAuth credentials and playlist plans can contain private data.
+client_secret*.json
+token*.json
+*.ytmsort.json
+sort-plan.json
+data/
+*cookies*
+browser-session.json
+ytmsorter-workspace-*.json
+coverage/
+.env.*
+*.log
+__pycache__/
+*.py[cod]
+.venv/
