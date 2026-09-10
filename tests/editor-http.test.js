@@ -4,8 +4,9 @@ import http from 'node:http';
 import { once } from 'node:events';
 import { randomUUID } from 'node:crypto';
 import { createApp } from '../src/server.js';
+import { AuthenticationRequiredError } from '../src/auth.js';
 
-async function fixture(t) {
+async function fixture(t, failure = {}) {
   let reads = 0;
   let writes = 0;
   let items = [{ itemId: 'a', videoId: 'abcdefghijk', title: 'A' }];
@@ -13,6 +14,7 @@ async function fixture(t) {
   const client = {
     async playlistSnapshot() {
       reads++;
+      if (failure.expired) throw new AuthenticationRequiredError('Session expired');
       return structuredClone({ info, items });
     },
     async playlistItems() {
@@ -20,6 +22,7 @@ async function fixture(t) {
       return structuredClone(items);
     },
     async removeItem() {
+      if (failure.write) throw new AuthenticationRequiredError('Session expired during write');
       writes++;
       items = [];
     },
@@ -87,6 +90,38 @@ async function fixture(t) {
     },
   };
 }
+
+test('expired preflight preserves the snapshot for an explicit new commit; old job IDs never replay', async (t) => {
+  const failure = {};
+  const f = await fixture(t, failure);
+  failure.expired = true;
+  await f.request('/api/commits', f.body);
+  const job = await f.wait();
+  assert.equal(job.safeToRetry, true);
+  assert.equal(job.authRequired, true);
+  assert.equal(job.submittedWrites, 0);
+  assert.equal(f.writes, 0);
+  failure.expired = false;
+  await f.request('/api/commits', f.body);
+  assert.equal(f.writes, 0, 'same job ID stays a receipt, never a retry');
+  f.body.commitId = randomUUID();
+  assert.equal((await f.request('/api/commits', f.body)).status, 202);
+  assert.equal((await f.wait()).status, 'succeeded');
+  assert.equal(f.writes, 1);
+});
+
+test('zero confirmed writes is not safe to retry when a write was submitted', async (t) => {
+  const f = await fixture(t, { write: true });
+  await f.request('/api/commits', f.body);
+  const job = await f.wait();
+  assert.equal(job.writes, 0);
+  assert.equal(job.submittedWrites, 1);
+  assert.equal(job.safeToRetry, false);
+  assert.equal(
+    (await f.request('/api/commits', { ...f.body, commitId: randomUUID() })).status,
+    409,
+  );
+});
 
 test('stateless snapshot → commit; same-instance retries never replay writes', async (t) => {
   const f = await fixture(t);

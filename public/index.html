@@ -94,7 +94,7 @@
     <main id="workspace">
       <aside id="library-pane" class="library pane">
         <div class="pane-title">
-          <h2>01 / LIBRARY</h2>
+          <h2>PLAYLIST LIBRARY</h2>
           <button id="library-refresh">Fetch</button>
           <button id="minimize-library" class="icon-button" aria-label="Minimize library">−</button>
         </div>
@@ -114,7 +114,7 @@
             Load tracks
           </button>
         </div>
-        <div class="pane-title"><h2>LOADED WORKSPACE</h2></div>
+        <div class="pane-title"><h2>SAVED DRAFTS</h2></div>
         <div id="loaded-list" class="loaded-list"></div>
         <p class="hint">
           Switching loaded playlists is local. Drafts survive a page reload on this browser.
@@ -130,12 +130,16 @@
         aria-orientation="vertical"
       ></div>
       <section id="editor-area" class="editor pane">
+        <p id="workspace-message" class="warning" role="alert" hidden></p>
         <div class="pane-title editor-title">
           <div>
             <h2 id="preview-title">02 / TRACK EDITOR</h2>
             <span id="preview-stats">Load a playlist to begin.</span>
           </div>
-          <button id="reload" disabled>Reload from YouTube</button>
+          <button id="recover-drafts">Reconnect &amp; keep edits</button>
+          <button id="reload" disabled title="Replaces the draft after confirmation">
+            Reload / discard draft
+          </button>
         </div>
         <p id="permission-warning" class="warning" hidden></p>
         <div class="toolbar quick-actions">
@@ -147,8 +151,20 @@
           <button id="select-all">Select visible</button>
           <button id="select-none">Clear selection</button>
           <button id="toggle-edit-tools" aria-expanded="false" aria-controls="edit-controls">
-            Tools ▾
+            More tools ▾
           </button>
+        </div>
+        <div class="toolbar transfer-bar">
+          <label for="destination">Send selected songs to</label>
+          <select id="destination" aria-label="Destination loaded playlist"></select>
+          <button id="copy">Copy selected</button><button id="transfer">Move selected</button>
+          <label class="inline"
+            >Dragging between playlists
+            <select id="drop-mode" aria-label="Drag between playlists">
+              <option value="move">Moves songs</option>
+              <option value="copy">Copies songs</option>
+            </select>
+          </label>
         </div>
         <div id="edit-controls" hidden>
           <div class="toolbar sortbar">
@@ -192,18 +208,6 @@
             ><button id="move-to">Move</button>
           </div>
           <div class="toolbar">
-            <span class="group-label">TRANSFER</span
-            ><select id="destination" aria-label="Destination loaded playlist"></select
-            ><button id="copy">Copy selected</button><button id="transfer">Move selected</button>
-            <label class="inline"
-              >Drag between
-              <select id="drop-mode" aria-label="Drag between playlists">
-                <option value="move">Move</option>
-                <option value="copy">Copy</option>
-              </select></label
-            >
-          </div>
-          <div class="toolbar">
             <span class="group-label">ADD</span
             ><input
               id="add-videos"
@@ -229,7 +233,7 @@
       ></div>
       <aside id="changes-pane" class="changes pane">
         <div class="pane-title">
-          <h2>03 / COMMIT BUFFER</h2>
+          <h2>PENDING CHANGES</h2>
           <span id="dirty-count">0</span>
           <button id="minimize-changes" class="icon-button" aria-label="Minimize commit buffer">
             −

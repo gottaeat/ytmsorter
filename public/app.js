@@ -1,5 +1,6 @@
 import { inferArtist, sortItems, computeMoves } from './sorting.js';
 import { normalizeLayout } from './layout.js';
+import { recoverDraft } from './recovery.js';
 import { createPaneWorkspace, bindSash } from './panes.js';
 import {
   readRecord,
@@ -211,6 +212,7 @@ async function api(path, body, { quiet = false } = {}) {
 async function operation(label, action) {
   if (busy || state.pending || !hasWorkspaceLock) return;
   busy = true;
+  $('workspace-message').hidden = true;
   if ($('connect-panel').open) $('session-error').hidden = true;
   $('operation-state').textContent = label.toUpperCase();
   log(label, 'read');
@@ -223,6 +225,8 @@ async function operation(label, action) {
     await action();
   } catch (error) {
     log(error.message, 'error');
+    $('workspace-message').textContent = error.message;
+    $('workspace-message').hidden = false;
     if ($('connect-panel').open) {
       $('session-error').textContent = error.message;
       $('session-error').hidden = false;
@@ -687,7 +691,8 @@ function renderChanges() {
         ),
       );
     }
-    if (d.stale) block.append(node('p', 'RELOAD REQUIRED', 'warning'));
+    if (d.stale)
+      block.append(node('p', 'Reconnect & keep edits to check this draft safely.', 'warning'));
     $('change-list').append(block);
   }
   if (!changed.length) $('change-list').append(node('p', 'No staged changes.', 'empty'));
@@ -728,6 +733,7 @@ function renderControls() {
   for (const id of ['load', 'library-refresh']) $(id).disabled = locked || !authenticated;
   for (const id of ['connect', 'disconnect', 'clear-workspace']) $(id).disabled = locked;
   $('verify-session').disabled = locked || !credentials;
+  $('recover-drafts').disabled = locked || !Object.keys(state.drafts).length;
   $('selection-count').textContent = `${selected.size} selected`;
   const destination = $('destination').value;
   $('destination').replaceChildren(node('option', 'Choose loaded destination…'));
@@ -744,13 +750,13 @@ function renderControls() {
 }
 function updateActiveHeading() {
   const d = current();
-  $('preview-title').textContent = d ? `ACTIVE / ${d.info.title}` : '02 / PLAYLIST WORKSPACE';
+  $('preview-title').textContent = d ? `Editing: ${d.info.title}` : 'Open a playlist to start';
   $('preview-stats').textContent = d
     ? `${d.items.length} tracks · ${d.info.id} · loaded ${new Date(d.loadedAt).toLocaleTimeString()}`
     : 'Load a playlist to begin.';
   $('permission-warning').hidden = !d || (d.info.editable && !d.stale);
   $('permission-warning').textContent = d?.stale
-    ? 'Snapshot consumed by a commit attempt. Reload this playlist before further edits. Its actual state may differ from the draft.'
+    ? 'Your edits are saved. Use Reconnect & keep edits to compare with YouTube without discarding your order.'
     : d?.info.permissionError ||
       'Read-only playlist. Tracks can be copied to an editable destination.';
 }
@@ -968,6 +974,37 @@ function connected() {
   setConnection(`CONNECTED / ${sessionName() || 'CHANNEL NAME UNAVAILABLE'}`, 'connected');
   $('connect-panel').close();
 }
+async function recoverSavedDrafts(includeEdited = false) {
+  const drafts = Object.values(state.drafts).filter(
+    (d) => d.stale || (includeEdited && diffDraft(d).dirty),
+  );
+  if (!drafts.length) return;
+  await writeRecord('recovery-backup', createBackup(state));
+  const recovered = [];
+  for (const draft of drafts) {
+    const fresh = await api('/api/snapshots', { playlist: draft.info.id });
+    recovered.push(recoverDraft(draft, fresh));
+  }
+  // A conflict in either half of a transfer keeps both drafts unchanged.
+  for (const draft of recovered) state.drafts[draft.info.id] = draft;
+  history = [];
+  redoHistory = [];
+  await save();
+  log(
+    `Recovered ${recovered.length} drafts. Your desired order and membership edits are kept. Review before committing; no writes sent.`,
+  );
+}
+$('recover-drafts').onclick = () => {
+  if (!authenticated) {
+    openSession();
+    return;
+  }
+  void operation('Checking saved edits against YouTube…', async () => {
+    if (Object.values(state.drafts).some((d) => d.stale || diffDraft(d).dirty))
+      await recoverSavedDrafts(true);
+    else openSession();
+  });
+};
 $('session-toggle').onclick = openSession;
 $('session-close').onclick = () => $('connect-panel').close();
 $('connect-panel').addEventListener('close', () => {
@@ -978,6 +1015,7 @@ $('verify-session').onclick = () =>
     const result = await api('/api/connect', credentials);
     await storeCredentials({ ...credentials, identity: result.identity });
     connected();
+    await recoverSavedDrafts();
     log('Saved session verified. Channel name updated; playlists unchanged.', 'read');
   });
 $('connect').onclick = () =>
@@ -991,6 +1029,7 @@ $('connect').onclick = () =>
     await storeCredentials({ ...nextCredentials, identity: result.identity });
     $('cookies').value = '';
     connected();
+    await recoverSavedDrafts();
     log('Session accepted. Library fetch and playlist loading are on demand.', 'read');
   });
 $('disconnect').onclick = () =>
@@ -1071,7 +1110,7 @@ async function watchCommit() {
       } catch (error) {
         if (error.code === 'WORKER_RESTARTED') {
           finishInterrupted(
-            'Worker restarted. The last browser receipt is only a lower bound on completed writes. Reload affected playlists; this commit will not be replayed.',
+            'Worker restarted. The last browser receipt is only a lower bound on completed writes. Use Reconnect & keep edits to check recovery; this commit will not be replayed.',
           );
           break;
         }
@@ -1100,10 +1139,20 @@ async function watchCommit() {
       if (job.status !== 'running') {
         state.lastCommit = job;
         state.receipts = [...(state.receipts || []), job].slice(-20);
-        for (const p of job.playlists) if (state.drafts[p.id]) state.drafts[p.id].stale = true;
+        const safeToRetry =
+          job.status === 'failed' && job.safeToRetry === true && job.submittedWrites === 0;
+        for (const p of job.playlists)
+          if (state.drafts[p.id]) state.drafts[p.id].stale = !safeToRetry;
         state.pending = null;
-        history = [];
-        redoHistory = [];
+        if (!safeToRetry) {
+          history = [];
+          redoHistory = [];
+        }
+        if (job.authRequired) {
+          authenticated = false;
+          setConnection('SESSION EXPIRED / EDITS SAVED', 'rejected');
+          openSession();
+        }
         save();
         if (job.status === 'succeeded') {
           $('job-progress').value = $('job-progress').max;
@@ -1111,9 +1160,14 @@ async function watchCommit() {
             `VERIFIED: ${job.writes} writes. Reload affected playlists to start a fresh draft.`,
             'local',
           );
+        } else if (safeToRetry) {
+          log(
+            `${job.error} No writes were submitted. Your edits and undo history are intact. Reconnect, then review and commit again.`,
+            'error',
+          );
         } else
           log(
-            `${job.error || 'Commit interrupted.'} ${job.writes} writes confirmed; the last submitted write may also have succeeded. Reload affected playlists.`,
+            `${job.error || 'Commit interrupted.'} ${job.writes} writes confirmed; the last submitted write may also have succeeded. Your target order is saved. Use Reconnect & keep edits to check recovery.`,
             'error',
           );
         break;
@@ -1152,7 +1206,7 @@ $('commit').onclick = async () => {
   } catch (error) {
     if (error.code === 'WORKER_RESTARTED') {
       finishInterrupted(
-        'Worker changed before commit submission. Reload affected playlists and review again.',
+        'Worker changed before commit submission. Your draft is kept. Use Reconnect & keep edits and review again.',
       );
     }
     if (error.status && error.status < 500) {
@@ -1177,7 +1231,7 @@ resume.onclick = () => {
   resume.hidden = true;
   void watchCommit();
 };
-const recover = node('button', 'Recover by reloading');
+const recover = node('button', 'Unlock for recovery');
 recover.id = 'recover-workspace';
 recover.hidden = true;
 resume.after(recover);
@@ -1187,12 +1241,12 @@ recover.onclick = () => {
     polling ||
     !hasWorkspaceLock ||
     !confirm(
-      'The worker has no receipt for this commit. Mark it uncertain and require affected playlists to be reloaded? No writes will be retried.',
+      'The worker has no receipt for this commit. Mark it uncertain and unlock recovery? Your target order stays saved. No writes will be retried.',
     )
   )
     return;
   finishInterrupted(
-    'No worker receipt found. Reload affected playlists to determine their actual state.',
+    'No worker receipt found. Your edits are saved. Use Reconnect & keep edits to compare them with YouTube.',
   );
   recover.hidden = true;
   resume.hidden = true;
@@ -1322,7 +1376,7 @@ $('help').onclick = () => {
     ],
     [
       'Recovery',
-      'Worker restarts do not lose drafts. A commit interrupted by a restart is never replayed; reload affected playlists. If tracking disconnects, Resume tracking reads only the worker’s memory.',
+      'Worker restarts do not lose drafts. A commit interrupted by a restart is never replayed; use Reconnect & keep edits to compare live state without discarding your target order. If tracking disconnects, Resume tracking reads only the worker’s memory.',
     ],
     [
       'Keyboard',
@@ -1404,7 +1458,7 @@ try {
   $('version').textContent = `v${session.version} · STATELESS WORKER`;
   if (hasWorkspaceLock && state.pending?.instanceId !== workerInstance && state.pending) {
     finishInterrupted(
-      'The worker changed or this is a legacy commit. Outcome may be partial; reload affected playlists before editing. No writes were replayed.',
+      'The worker changed or this is a legacy commit. Outcome may be partial; use Reconnect & keep edits before committing again. Your target order is saved. No writes were replayed.',
     );
   }
 } catch (error) {

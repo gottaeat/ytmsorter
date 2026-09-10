@@ -306,6 +306,7 @@ export function mountEditorRoutes(
       status: 'running',
       startedAt: new Date().toISOString(),
       writes: 0,
+      submittedWrites: 0,
       maximum,
       playlists: changes.map((change) => ({
         id: change.snapshot.info.id,
@@ -319,6 +320,7 @@ export function mountEditorRoutes(
     active = entry;
     const report = async (phase, message, writes) => {
       job.writes = writes;
+      if (phase === 'write') job.submittedWrites += 1;
       job.events.push({ at: new Date().toISOString(), phase, message });
     };
     // Credentials live only in this request/worker closure, never in a receipt.
@@ -336,6 +338,11 @@ export function mountEditorRoutes(
         job.status = 'succeeded';
       } catch (error) {
         job.status = 'failed';
+        job.safeToRetry = job.submittedWrites === 0;
+        job.authRequired = error instanceof AuthenticationRequiredError;
+        if (job.safeToRetry) {
+          for (const draft of drafts) claimed.delete(workspace + ':' + draft.snapshotId);
+        }
         job.error =
           error instanceof YouTubeApiError || error instanceof AuthenticationRequiredError
             ? error.message

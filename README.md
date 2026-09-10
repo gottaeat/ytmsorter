@@ -12,7 +12,7 @@ project, OAuth setup, database, data volume, analytics, or remote UI assets.
 
 ![Grayscale demo workbench with two playlist panes and staged additions and reorders](docs/demo-workbench.jpg)
 
-_Synthetic demo data; no personal account or cookies. Activity panel minimized._
+_Synthetic demo data; no personal account or cookies._
 
 > This uses YouTube's unofficial internal API through
 > [YouTube.js](https://github.com/LuanRT/YouTube.js). It can break, and no tool can
@@ -84,7 +84,8 @@ than guessing another channel. Names stay with browser credentials, outside expo
    transfer. `Ctrl/⌘ Z` and `Ctrl/⌘ Shift Z` work outside form fields.
 5. **Review commit** shows all removals and final track orders. Confirm to send
    the change set. Watch the timestamped check/write/confirmed/verify events.
-6. After any commit attempt, reload affected playlists before editing again.
+6. After a successful commit, reload to start fresh. If a commit fails, keep the
+   draft and use **Reconnect & keep edits**; don't discard hours of staging.
 
 The buffer shows the net difference from the loaded snapshot, not one entry per
 mouse gesture. Additions show their **final position**; the expanded **Order
@@ -100,14 +101,15 @@ remain in the sidebar and commit buffer. Choose the playlists you want to open.
 Loading a playlist opens another editor pane; clicking an already loaded playlist
 focuses or reopens its pane without fetching again. Each pane has its own filter,
 selection and scroll position. The highlighted pane is active: the shared Sort,
-Remove selected, and **Tools** controls apply to that playlist. Tools contains
-artist options, explicit positions, additions, and copy/transfer controls.
+Remove selected, and **More tools** controls apply to that playlist. The visible
+transfer bar lets you choose a destination and copy/move selected songs without
+dragging. More tools contains artist options, explicit positions and additions.
 
-- Drag the `⠿` grip to reorder a track. Select several tracks first to drag them
+- Drag a song (including its linked title), or the `⠿` grip, to reorder it. Select several tracks first to drag them
   together in their existing order. The insertion line shows the exact position;
   dropping into empty space appends to the end, even in a filtered view.
 - Cross-playlist drags **move** by default. Hold **Alt, Ctrl or ⌘** to copy, or
-  choose **Tools → Drag between → Copy**. Read-only sources always copy; stale
+  choose **Dragging between playlists → Copies songs**. Read-only sources always copy; stale
   or read-only destinations reject drops. External browser/file drags are ignored.
 - Drags only stage changes. Undo reverses both sides of a move; the commit buffer
   still allows individual additions/removals to be reverted. Duplicate videos
@@ -123,8 +125,9 @@ artist options, explicit positions, additions, and copy/transfer controls.
   are kept while the page is open, not across reloads.
 
 On narrow screens, utility panels stack and playlist editors scroll horizontally.
-Use selection and the explicit position/copy/move controls when native dragging
-is unavailable, such as on touch-only devices.
+Dragging uses pointer events rather than the browser's native HTML drag behavior.
+On touch devices drag the grip; swipe elsewhere to scroll. Drop on a row to insert
+at its line, or on a playlist header/footer to append. Escape cancels a drag.
 
 Filtering, sorting, selecting, staging, individual reverts, undo/redo, exporting,
 and review make **no YouTube calls**. Opening the page checks only the local
@@ -197,13 +200,33 @@ YouTube has no atomic transaction for this workflow: a commit can partly succeed
 Receipts distinguish submitted operations from confirmed responses; the last
 unconfirmed write may also have succeeded. There is no automatic rollback.
 
+### Expired cookies do not erase your edits
+
+If authentication fails **before any write was submitted**, the draft and undo
+history remain usable. Replace cookies in **Session**, then review and commit
+again explicitly. An old job ID only returns its receipt; it never replays writes.
+
+For already-blocked drafts (including ones saved by older versions), choose
+**Reconnect & keep edits**. Connecting new cookies also checks blocked drafts.
+Recovery reads fresh snapshots and keeps your desired order, additions and
+removals. It can reconcile partial reorders, completed removals, and uniquely
+identifiable additions without adding them twice. No YouTube writes occur until
+you review and commit again. A browser-only checkpoint is saved before recovery.
+
+Recovery is all-or-nothing across affected playlists. Wrong ownership, missing
+desired songs, unknown live additions or ambiguous duplicates stop recovery;
+your drafts remain intact and the conflict is shown above the editor. Export
+the workspace before manual conflict resolution. Never use **Reload / discard
+draft** to fix an expired session: that explicitly replaces your staged order.
+
 - **Page reload:** resumes tracking the same worker job; does not resubmit it.
 - **Connection loss:** keeps drafts locked. Use **Resume tracking** to query the
   local receipt, not repeat edits.
 - **Worker restart:** a new boot ID rejects old submissions. The browser keeps
-  its last receipt, marks the outcome uncertain, and requires affected playlists
-  to be reloaded. An observed receipt is only a lower bound on completed writes.
-- **Unknown job:** explicitly recover by reloading; never assume no edits occurred.
+  its last receipt and marks the outcome uncertain. Use **Reconnect & keep edits**
+  to check live state. An observed receipt is only a lower bound on completed writes.
+- **Unknown job:** use **Unlock for recovery**, then **Reconnect & keep edits**;
+  never assume no edits occurred.
 
 Same-ID submissions are deduplicated within one worker lifetime. This is not an
 exactly-once guarantee across crashes. The worker retains up to `MAX_JOBS` receipts
@@ -253,6 +276,12 @@ or live playlist writes. For an isolated UI demo:
 ```bash
 PORT=3001 BASE_URL=http://localhost:3001 npm run demo
 ```
+
+An optional real-browser smoke test covers drag/multi-drag, move/copy, Undo,
+legacy draft recovery and reload persistence: `node scripts/ui-smoke.mjs`.
+It needs Playwright and Chromium, uses an isolated profile and port 3005, and
+never contacts YouTube. `PLAYWRIGHT_MODULE` and `BROWSER_EXECUTABLE` can point to
+existing local installations; `UI_SCREENSHOT` optionally saves a demo screenshot.
 
 Open [localhost:3001](http://localhost:3001). The demo has two synthetic playlists;
 all commits modify only its memory. Use a separate origin from real drafts.

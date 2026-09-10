@@ -15,6 +15,50 @@
     monospace;
   color-scheme: dark;
 }
+/* Familiar controls, larger song targets, and persistent transfer affordances. */
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+.masthead h1,
+.machine-label,
+footer {
+  font-family: ui-monospace, monospace;
+}
+.transfer-bar {
+  background: var(--panel);
+  padding: 8px;
+  gap: 8px;
+}
+.transfer-bar > select {
+  flex: 1;
+  min-width: 140px;
+}
+.transfer-bar > label.inline {
+  margin-left: auto;
+}
+.transfer-bar button {
+  min-height: 32px;
+}
+.pane-drop-hint {
+  padding: 12px;
+  text-align: center;
+  color: var(--muted);
+  border-top: 1px dashed var(--line);
+  font-size: 11px;
+}
+.track-drag-active,
+.track-drag-active * {
+  cursor: grabbing !important;
+  user-select: none !important;
+}
+.track-drag-active .pane-drop-hint {
+  background: #393939;
+  color: var(--text);
+}
+.track-drag-active .playlist-pane {
+  outline: 1px dashed #777;
+  outline-offset: -1px;
+}
 html {
   scrollbar-color: #646464 #1e1e1e;
 }
@@ -1078,7 +1122,7 @@ footer {
 }
 .playlist-pane th,
 .playlist-pane td {
-  padding: 4px;
+  padding: 7px 5px;
 }
 .playlist-pane td:first-child,
 .playlist-pane th:first-child {
@@ -1111,9 +1155,10 @@ footer {
 .track-artist {
   display: block;
   color: var(--muted);
-  font-size: 9px;
+  font-size: 11px;
 }
 .drag-grip {
+  touch-action: none;
   cursor: grab;
   color: var(--muted);
   user-select: none;

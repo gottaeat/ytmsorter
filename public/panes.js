@@ -79,6 +79,9 @@ export function createPaneWorkspace({
   const filters = new Map();
   const scrolls = new Map();
   let drag = null;
+  let pointer = null;
+  let suppressClick = false;
+  const targets = new Map();
   let scrolling = null;
   let frame = null;
   const selection = (id) => {
@@ -147,12 +150,85 @@ export function createPaneWorkspace({
   };
   const endDrag = () => {
     drag = null;
+    pointer = null;
+    document.body.classList.remove('track-drag-active');
     clearMarker();
     stopScroll();
     host.querySelectorAll('.dragging').forEach((row) => row.classList.remove('dragging'));
     status.textContent =
-      'Drag the grip to reorder or transfer. Alt/Ctrl/⌘ = copy. Changes stay local.';
+      'Drag a song to a position or another playlist. Hold Alt/Ctrl/⌘ to copy. Nothing changes on YouTube until commit.';
   };
+  host.addEventListener(
+    'click',
+    (event) => {
+      if (suppressClick) {
+        event.preventDefault();
+        event.stopPropagation();
+        suppressClick = false;
+      }
+    },
+    true,
+  );
+  const hitTarget = (event) => {
+    const hit = document.elementFromPoint(event.clientX, event.clientY);
+    const pane = hit?.closest('.playlist-pane');
+    const target = targets.get(pane?.dataset.playlistId);
+    return target ? { ...target, hit } : null;
+  };
+  document.addEventListener(
+    'pointermove',
+    (event) => {
+      if (!pointer || event.pointerId !== pointer.id) return;
+      if (!drag && Math.hypot(event.clientX - pointer.x, event.clientY - pointer.y) < 6) return;
+      if (!drag) {
+        pointer.start();
+        document.body.classList.add('track-drag-active');
+        pointer.row.setPointerCapture(event.pointerId);
+      }
+      event.preventDefault();
+      const target = hitTarget(event);
+      clearMarker();
+      if (!target || !mayDrop(target.draft, dropMode(event, target.draft))) {
+        stopScroll();
+        status.textContent =
+          'Drop on an editable playlist. Open the destination from the library first.';
+        return;
+      }
+      target.box.ondragover({
+        target: target.hit,
+        clientY: event.clientY,
+        altKey: event.altKey,
+        ctrlKey: event.ctrlKey,
+        metaKey: event.metaKey,
+        dataTransfer: {},
+        preventDefault() {},
+      });
+      const bounds = host.getBoundingClientRect();
+      if (event.clientX < bounds.left + 30) host.scrollLeft -= 12;
+      else if (event.clientX > bounds.right - 30) host.scrollLeft += 12;
+    },
+    { passive: false },
+  );
+  document.addEventListener('pointerup', (event) => {
+    if (!pointer || event.pointerId !== pointer.id) return;
+    const target = hitTarget(event);
+    const payload = drag;
+    const copy = target && dropMode(event, target.draft);
+    const allowed = target && mayDrop(target.draft, copy);
+    const beforeId = target?.point({ target: target.hit, clientY: event.clientY }).beforeId;
+    suppressClick = !!payload;
+    endDrag();
+    if (payload && allowed)
+      onDrop(payload.sourceId, target.draft.info.id, new Set(payload.ids), { beforeId, copy });
+    setTimeout(() => {
+      suppressClick = false;
+    }, 0);
+  });
+  document.addEventListener('pointercancel', endDrag);
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && pointer) endDrag();
+  });
+  window.addEventListener('blur', endDrag);
   document.addEventListener('dragend', endDrag);
   document.addEventListener('drop', () => {
     if (drag) endDrag();
@@ -174,7 +250,7 @@ export function createPaneWorkspace({
         `${selected.has(item.itemId) ? 'selected ' : ''}${before === undefined ? 'added' : before !== position ? 'moved' : ''}`,
       );
       row.dataset.itemId = item.itemId;
-      row.draggable = !isLocked() && !draft.stale;
+      row.draggable = false;
       const grip = element('td', '⠿', 'drag-grip');
       grip.title = 'Drag this track or the selected tracks';
       const cell = element('td');
@@ -203,17 +279,13 @@ export function createPaneWorkspace({
         title,
         element('td', badge, 'track-state'),
       );
-      row.ondragstart = (event) => {
-        if (isLocked() || draft.stale || event.target.closest('a,input,button')) {
-          event.preventDefault();
-          return;
-        }
+      const start = () => {
         focus(draft.info.id);
         if (!selected.has(item.itemId)) {
           selected.clear();
           selected.add(item.itemId);
         }
-        // Do not replace DOM nodes during dragstart: that cancels native dragging.
+        // Keep the source DOM stable while the pointer is captured.
         for (const child of tbody.rows) {
           const chosen = selected.has(child.dataset.itemId);
           child.classList.toggle('selected', chosen);
@@ -222,11 +294,18 @@ export function createPaneWorkspace({
           if (input) input.checked = chosen;
         }
         drag = { sourceId: draft.info.id, ids: [...selected] };
-        event.dataTransfer.effectAllowed = draft.info.editable ? 'copyMove' : 'copy';
-        event.dataTransfer.setData('application/x-ytmsorter-tracks', 'internal-workspace-drag');
         status.textContent = `${selected.size} tracks · drop at the insertion line · ${draft.info.editable ? 'move (Alt/Ctrl/⌘ to copy)' : 'read-only source: copy only'}`;
         controls();
       };
+      row.onpointerdown = (event) => {
+        if (event.button !== 0 || isLocked() || draft.stale || event.target.closest('input,button'))
+          return;
+        if (event.pointerType === 'touch' && !event.target.closest('.drag-grip')) return;
+        if (event.pointerType !== 'touch') event.preventDefault();
+        suppressClick = false;
+        pointer = { id: event.pointerId, x: event.clientX, y: event.clientY, row, start };
+      };
+      row.ondragstart = (event) => event.preventDefault();
       tbody.append(row);
     }
     if (!tbody.children.length) {
@@ -248,6 +327,7 @@ export function createPaneWorkspace({
     for (const pane of host.querySelectorAll('.playlist-pane'))
       scrolls.set(pane.dataset.playlistId, pane.querySelector('.table-wrap')?.scrollTop || 0);
     host.replaceChildren();
+    targets.clear();
     const state = getState();
     state.layout = normalizeLayout(state.layout, state.drafts, state.active);
     const open = layout().open;
@@ -354,7 +434,7 @@ export function createPaneWorkspace({
       header.append(name, minimize, close);
       const meta = element(
         'div',
-        `${draft.items.length} tracks · ${draft.info.id} · ${draft.stale ? 'RELOAD REQUIRED' : draft.info.editable ? 'editable' : 'copy source'}`,
+        `${draft.items.length} songs · ${draft.stale ? 'Edits saved — reconnect to recover' : draft.info.editable ? 'Drag to reorder · drop here to transfer' : 'Read-only · drag songs to copy'}`,
         'playlist-meta',
       );
       const filter = element('input');
@@ -420,7 +500,9 @@ export function createPaneWorkspace({
         endDrag();
         onDrop(payload.sourceId, id, new Set(payload.ids), { beforeId, copy });
       };
-      pane.append(header, meta, filter, box);
+      targets.set(id, { draft, box, point });
+      const dropHint = element('div', 'Drop songs here to add at the end', 'pane-drop-hint');
+      pane.append(header, meta, filter, box, dropHint);
       host.append(pane);
       renderRows(pane, draft);
       box.scrollTop = scrolls.get(id) || 0;

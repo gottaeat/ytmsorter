@@ -19,7 +19,7 @@ from your real workspace.
 
 - `public/app.js`: UI, local staging, commit orchestration and recovery.
 - `public/persistence.js`: IndexedDB and sanitized portable backups.
-- `public/panes.js`, `public/layout.js`: split editors, native drag/drop, resizable
+- `public/panes.js`, `public/layout.js`: split editors, pointer drag/drop, resizable
   dividers and sanitized browser-owned layout preferences.
 - `public/model.js`, `public/sorting.js`: pure playlist operations.
 - `src/editor.js`: snapshot validation, in-memory jobs, preflight/write/verify.
