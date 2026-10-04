@@ -135,7 +135,7 @@ export function validateWorkspace(input) {
     layout: normalizeLayout(input.layout, drafts, active),
     pending: null,
     preferences: {
-      density: input.preferences?.density === 'comfortable' ? 'comfortable' : 'compact',
+      density: input.preferences?.density === 'compact' ? 'compact' : 'comfortable',
     },
   };
 }

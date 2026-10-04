@@ -8,6 +8,7 @@ import {
   moveSelection,
   transferItems,
   removeItems,
+  deduplicateItems,
   revertAddition,
   revertRemoval,
   revertOrder,
@@ -301,4 +302,58 @@ test('graceful shutdown stops before the next write without rollback or retries'
     /shutting down/u,
   );
   assert.equal(events.filter((x) => x.startsWith('remove:')).length, 1);
+});
+
+test('deduplication keeps the first copy in draft order without mutating the loaded snapshot', () => {
+  const original = [
+    { itemId: 'first-a', videoId: 'aaaaaaaaaaa', title: 'Same title' },
+    { itemId: 'b', videoId: 'bbbbbbbbbbb', title: 'Same title' },
+    { itemId: 'second-a', videoId: 'aaaaaaaaaaa', title: 'Renamed upload' },
+    { itemId: 'third-a', videoId: 'aaaaaaaaaaa', title: 'Same title' },
+  ];
+  const before = structuredClone(original);
+  const result = deduplicateItems(original);
+  assert.deepEqual(
+    result.items.map((item) => item.itemId),
+    ['first-a', 'b'],
+  );
+  assert.deepEqual(
+    result.removed.map((item) => item.itemId),
+    ['second-a', 'third-a'],
+  );
+  assert.deepEqual(original, before);
+  assert.equal(diffDraft({ original, items: result.items }).reordered, false);
+  assert.equal(diffDraft({ original, items: result.items }).removed.length, 2);
+  assert.equal(deduplicateItems(result.items).removed.length, 0);
+});
+
+test('deduplication respects staged additions and the current order, rather than the loaded order', () => {
+  const original = [
+    { itemId: 'old-a', videoId: 'aaaaaaaaaaa' },
+    { itemId: 'old-b', videoId: 'bbbbbbbbbbb' },
+  ];
+  const added = { itemId: 'new:a', videoId: 'aaaaaaaaaaa' };
+  const draft = {
+    original,
+    items: [added, original[1], original[0], { ...added, itemId: 'new:second-a' }],
+  };
+  const result = deduplicateItems(draft.items);
+  assert.deepEqual(
+    result.items.map((item) => item.itemId),
+    ['new:a', 'old-b'],
+  );
+  const diff = diffDraft({ ...draft, items: result.items });
+  assert.deepEqual(
+    diff.removed.map((item) => item.itemId),
+    ['old-a'],
+  );
+  assert.deepEqual(
+    diff.added.map((item) => item.itemId),
+    ['new:a'],
+  );
+  assert.deepEqual(
+    draft.items.map((item) => item.itemId),
+    ['new:a', 'old-b', 'old-a', 'new:second-a'],
+  );
+  assert.deepEqual(deduplicateItems([]), { items: [], removed: [] });
 });

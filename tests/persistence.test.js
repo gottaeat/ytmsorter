@@ -54,3 +54,12 @@ test('import cannot poison object prototypes or restore arbitrary active keys', 
   assert.throws(() => validateWorkspace(malicious), /playlist/u);
   assert.equal({}.polluted, undefined);
 });
+
+test('comfortable song spacing is the default without overriding a saved compact preference', () => {
+  const state = { library: [], drafts: {}, active: null };
+  assert.equal(readBackup(createBackup(state)).preferences.density, 'comfortable');
+  assert.equal(
+    readBackup(createBackup({ ...state, preferences: { density: 'compact' } })).preferences.density,
+    'compact',
+  );
+});

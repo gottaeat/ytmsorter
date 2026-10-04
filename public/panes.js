@@ -149,14 +149,15 @@ export function createPaneWorkspace({
     );
   };
   const endDrag = () => {
+    const wasDragging = !!drag;
     drag = null;
     pointer = null;
     document.body.classList.remove('track-drag-active');
     clearMarker();
     stopScroll();
     host.querySelectorAll('.dragging').forEach((row) => row.classList.remove('dragging'));
-    status.textContent =
-      'Drag a song to a position or another playlist. Hold Alt/Ctrl/⌘ to copy. Nothing changes on YouTube until commit.';
+    status.textContent = `Drag songs to arrange them. Dragging between playlists ${layout().dropMode === 'copy' ? 'copies' : 'moves'} songs. Review before saving to YouTube.`;
+    if (wasDragging) controls();
   };
   host.addEventListener(
     'click',
@@ -181,8 +182,8 @@ export function createPaneWorkspace({
       if (!pointer || event.pointerId !== pointer.id) return;
       if (!drag && Math.hypot(event.clientX - pointer.x, event.clientY - pointer.y) < 6) return;
       if (!drag) {
-        pointer.start();
         document.body.classList.add('track-drag-active');
+        pointer.start();
         pointer.row.setPointerCapture(event.pointerId);
       }
       event.preventDefault();
@@ -271,7 +272,7 @@ export function createPaneWorkspace({
       link.draggable = false;
       title.append(link);
       title.append(element('small', artist(item, draft), 'track-artist'));
-      const badge = before === undefined ? '+ NEW' : before !== position ? `WAS ${before + 1}` : '';
+      const badge = before === undefined ? 'Added' : before !== position ? `Was ${before + 1}` : '';
       row.append(
         grip,
         cell,
@@ -314,7 +315,7 @@ export function createPaneWorkspace({
         'td',
         draft.items.length
           ? 'No matching tracks. Clear the filter to see all entries.'
-          : 'Empty playlist — drop tracks here or stage additions.',
+          : 'Empty playlist — drop tracks here or add songs.',
         'empty-drop',
       );
       cell.colSpan = 5;
@@ -332,13 +333,7 @@ export function createPaneWorkspace({
     state.layout = normalizeLayout(state.layout, state.drafts, state.active);
     const open = layout().open;
     if (!open.length)
-      host.append(
-        element(
-          'div',
-          'Open playlists from the library to arrange them side by side. Closed panes keep their drafts.',
-          'editor-empty',
-        ),
-      );
+      host.append(element('div', 'Choose a playlist to arrange your songs.', 'editor-empty'));
     for (const [index, id] of open.entries()) {
       const draft = state.drafts[id];
       if (
@@ -408,8 +403,12 @@ export function createPaneWorkspace({
       pane.classList.toggle('active', state.active === id);
       pane.style.flexGrow = layout().weights[id] || 1;
       pane.setAttribute('aria-label', `${draft.info.title} playlist editor`);
-      pane.onpointerdown = () => focus(id);
-      pane.onfocusin = () => {
+      // Activate after a click, so selection controls cannot move the clicked row
+      // between pointerdown and pointerup. Dragging activates in start(), and
+      // checkbox changes activate after their checked state has been applied.
+      pane.onclick = () => focus(id);
+      pane.onfocusin = (event) => {
+        if (event.target.matches('input[type="checkbox"]')) return;
         if (getState().active !== id) focus(id);
       };
       const header = element('div', undefined, 'playlist-title');
@@ -434,11 +433,11 @@ export function createPaneWorkspace({
       header.append(name, minimize, close);
       const meta = element(
         'div',
-        `${draft.items.length} songs · ${draft.stale ? 'Edits saved — reconnect to recover' : draft.info.editable ? 'Drag to reorder · drop here to transfer' : 'Read-only · drag songs to copy'}`,
+        `${draft.items.length} songs · ${draft.stale ? 'Edits saved — reconnect to recover' : draft.info.editable ? 'Drag to arrange · select for more actions' : 'Read-only · drag songs to copy'}`,
         'playlist-meta',
       );
       const filter = element('input');
-      filter.placeholder = 'Filter this playlist…';
+      filter.placeholder = 'Search songs or artists…';
       filter.value = filters.get(id) || '';
       filter.setAttribute('aria-label', `Filter ${draft.info.title}`);
       filter.className = 'pane-filter';
@@ -452,8 +451,14 @@ export function createPaneWorkspace({
       const table = element('table');
       const head = element('thead');
       const columns = element('tr');
-      for (const text of ['', 'SEL', '#', 'TRACK / ARTIST', ''])
-        columns.append(element('th', text));
+      for (const [index, text] of ['', '', '#', 'Song / artist', ''].entries()) {
+        const heading = element('th', text);
+        heading.scope = 'col';
+        if (index === 0) heading.setAttribute('aria-label', 'Drag to arrange');
+        if (index === 1) heading.setAttribute('aria-label', 'Select song');
+        if (index === 4) heading.setAttribute('aria-label', 'Changes');
+        columns.append(heading);
+      }
       head.append(columns);
       table.append(head, element('tbody'));
       box.append(table);

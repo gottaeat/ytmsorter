@@ -28,11 +28,25 @@ try {
     headless: true,
     executablePath: process.env.BROWSER_EXECUTABLE || undefined,
   });
-  const page = await browser.newPage({ viewport: { width: 1500, height: 1000 } });
+  const context = await browser.newContext({ viewport: { width: 1500, height: 1000 } });
+  const page = await context.newPage();
   const errors = [];
   page.on('pageerror', (error) => errors.push(error.message));
   await page.goto(base);
-  await page.getByRole('button', { name: 'Fetch', exact: true }).click();
+  // Permanent dark mode also applies when the OS/browser prefers a light theme.
+  await page.emulateMedia({ colorScheme: 'light' });
+  assert.equal(
+    await page.evaluate(() => getComputedStyle(document.documentElement).colorScheme),
+    'dark',
+  );
+  assert.equal(
+    await page.locator('body').evaluate((body) => getComputedStyle(body).backgroundColor),
+    'rgb(16, 21, 19)',
+  );
+  assert.equal(await page.locator('#welcome').isVisible(), true);
+  assert.equal(await page.locator('#console-pane').isVisible(), false);
+  assert.equal(await page.locator('#connect-panel').isVisible(), false);
+  await page.getByRole('button', { name: 'Find my playlists', exact: true }).click();
   await page.locator('#library-list button').filter({ hasText: 'Workshop rotation' }).click();
   await page.locator('#library-list button').filter({ hasText: 'Night shift archive' }).click();
   const source = page.locator('[data-playlist-id="PLworkshop"]');
@@ -49,6 +63,13 @@ try {
     await page.mouse.up();
   };
   const original = await ids(source);
+  assert.equal(await page.locator('#welcome').isVisible(), false);
+  assert.equal(await page.locator('#selection-actions').isVisible(), false);
+  // A fresh workspace copies across playlists; explicit moves remain available.
+  await page.getByRole('button', { name: 'More options', exact: true }).click();
+  assert.equal(await page.locator('#drop-mode').inputValue(), 'copy');
+  await page.locator('#drop-mode').selectOption('move');
+  await page.getByRole('button', { name: 'More options', exact: true }).click();
   await drag(
     source.locator('tbody tr').first().locator('.drag-grip'),
     dest.locator('tbody tr').nth(1),
@@ -61,7 +82,9 @@ try {
   // Drag by the track title, not only the grip; it must not navigate.
   await drag(source.locator('tbody tr').nth(2).locator('a'), source.locator('tbody tr').first());
   assert.equal((await ids(source))[0], original[2]);
+  await page.getByRole('button', { name: 'More options', exact: true }).click();
   await page.locator('#drop-mode').selectOption('copy');
+  await page.getByRole('button', { name: 'More options', exact: true }).click();
   await drag(
     source.locator('tbody tr').first().locator('.drag-grip'),
     dest.locator('.pane-drop-hint'),
@@ -70,6 +93,27 @@ try {
   assert.equal((await ids(dest)).length, 4);
   assert.equal(await page.locator('#request-count').textContent(), '4 local requests');
   assert.equal(page.context().pages().length, 1, 'dragging a linked title must not open the video');
+  // Deduplicate the whole draft even when search hides the extra copy.
+  const beforeDedup = await ids(dest);
+  const sourceBeforeDedup = await ids(source);
+  await dest.locator('.pane-filter').fill('Roads');
+  assert.equal(await page.locator('#deduplicate').textContent(), 'Remove duplicates (1)');
+  await page.locator('#deduplicate').click();
+  assert.equal(await page.locator('#deduplicate').isEnabled(), false);
+  await dest.locator('.pane-filter').fill('');
+  assert.equal((await ids(dest)).length, 3);
+  assert.deepEqual(
+    await ids(source),
+    sourceBeforeDedup,
+    'deduplication only affects the active playlist',
+  );
+  assert.equal(await page.locator('#request-count').textContent(), '4 local requests');
+  await page.locator('#undo').click();
+  assert.deepEqual(await ids(dest), beforeDedup, 'Undo restores duplicate entries');
+  await page.locator('#redo').click();
+  assert.equal((await ids(dest)).length, 3);
+  await page.locator('#undo').click();
+  assert.deepEqual(await ids(dest), beforeDedup);
   await source.locator('tbody tr').first().locator('input').check();
   await source.locator('tbody tr').nth(1).locator('input').check();
   await drag(
@@ -80,25 +124,24 @@ try {
   await page.getByRole('button', { name: 'Undo', exact: true }).click();
   assert.equal((await ids(dest)).length, 4);
   const desired = await ids(source);
+  await page.locator('.workspace-menu > summary').click();
   const saved = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Export workspace', exact: true }).click();
   const backup = JSON.parse(await readFile(await (await saved).path(), 'utf8'));
   for (const draft of Object.values(backup.workspace.drafts)) draft.stale = true;
   const importLegacy = async () => {
     page.once('dialog', (dialog) => dialog.accept());
-    await page
-      .locator('#import-file')
-      .setInputFiles({
-        name: 'legacy.json',
-        mimeType: 'application/json',
-        buffer: Buffer.from(JSON.stringify(backup)),
-      });
+    await page.locator('#import-file').setInputFiles({
+      name: 'legacy.json',
+      mimeType: 'application/json',
+      buffer: Buffer.from(JSON.stringify(backup)),
+    });
     await page.waitForFunction(() => document.getElementById('review').disabled);
   };
   await importLegacy();
-  await page.getByRole('button', { name: 'Session', exact: true }).click();
+  await page.getByRole('button', { name: 'YouTube connection', exact: true }).click();
   await page.locator('#cookies').fill('DEMO-ONLY-NOT-REAL-COOKIES');
-  await page.getByRole('button', { name: 'Connect / replace cookies', exact: true }).click();
+  await page.getByRole('button', { name: 'Connect YouTube', exact: true }).click();
   await page.waitForFunction(() => !document.getElementById('review').disabled);
   await page.locator('#loaded-list button').filter({ hasText: 'Workshop rotation' }).click();
   assert.deepEqual(
@@ -121,19 +164,61 @@ try {
   assert.equal(await page.locator('#review').isEnabled(), true);
   await page.reload();
   await page.waitForFunction(
-    () => document.getElementById('save-state').textContent === 'SAVED IN BROWSER',
+    () => document.getElementById('save-state').textContent === 'Draft saved in this browser',
   );
-  assert.equal(await page.locator('.playlist-pane').count(), 0);
+  assert.equal(await page.locator('.playlist-pane').count(), 2, 'saved editors reopen on reload');
+  assert.equal(await page.locator('#welcome').isVisible(), false);
   await page.locator('#loaded-list button').filter({ hasText: 'Workshop rotation' }).click();
   assert.deepEqual(await ids(source), desired);
   await page.locator('#loaded-list button').filter({ hasText: 'Night shift archive' }).click();
   await page.waitForFunction(
-    () => document.getElementById('save-state').textContent === 'SAVED IN BROWSER',
+    () => document.getElementById('save-state').textContent === 'Draft saved in this browser',
   );
+  // Selection reveals useful actions and requires a valid destination.
+  await source.locator('tbody input').first().check();
+  assert.equal(await page.locator('#selection-actions').isVisible(), true);
+  await page.locator('#destination').selectOption('');
+  assert.equal(await page.locator('#copy').isEnabled(), false);
+  await page.locator('#destination').selectOption('PLarchive');
+  assert.equal(await page.locator('#copy').isEnabled(), true);
+  await page.locator('#select-none').click();
+  assert.equal(await page.locator('#selection-actions').isVisible(), false);
+  // Closing a view retains its data and shows a way back into saved work.
+  await source
+    .getByRole('button', { name: 'Close pane TEST / Workshop rotation', exact: true })
+    .click();
+  await dest
+    .getByRole('button', { name: 'Close pane TEST / Night shift archive', exact: true })
+    .click();
+  assert.equal(await page.locator('#welcome').isVisible(), true);
+  await page.locator('#resume-workspace').click();
+  assert.deepEqual(await ids(source), desired);
+  // The review gate must require explicit confirmation, even in the demo.
+  await page.locator('#review').click();
+  assert.equal(await page.locator('#commit').isEnabled(), false);
+  await page.locator('#commit-confirm').check();
+  assert.equal(await page.locator('#commit').isEnabled(), true);
+  await page.locator('#review-close').click();
+  // A second tab can view drafts but cannot edit them.
+  const second = await page.context().newPage();
+  await second.goto(base);
+  await second.locator('#tab-warning').waitFor({ state: 'visible' });
+  assert.equal(await second.locator('#sort').isEnabled(), false);
+  await second.close();
+  // The document should not scroll sideways on phone, tablet or desktop.
+  for (const width of [390, 768, 1024, 1500]) {
+    await page.setViewportSize({ width, height: 900 });
+    assert.equal(
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+      true,
+      `no page overflow at ${width}px`,
+    );
+    assert.equal(await page.locator('#review').isVisible(), true);
+  }
   if (process.env.UI_SCREENSHOT) await page.screenshot({ path: process.env.UI_SCREENSHOT });
   assert.deepEqual(errors, []);
   console.log(
-    'Browser smoke passed: cross-pane move/copy, title reorder, undo, legacy draft recovery, persistence; no YouTube calls.',
+    'Browser smoke passed: cross-pane move/copy, title reorder, undo, legacy recovery, restored views, contextual actions, review gate, second-tab locking, responsive layout, permanent dark mode, whole-playlist deduplication and undo/redo; no YouTube calls.',
   );
 } finally {
   await browser?.close();

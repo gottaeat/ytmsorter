@@ -83,6 +83,22 @@ export function removeItems(items, selected) {
   return items.filter((item) => !selected.has(item.itemId));
 }
 
+export function deduplicateItems(items) {
+  // Keep the first occurrence in the current draft order, including staged additions.
+  // Match videos, never titles: different uploads/versions are distinct songs.
+  const seen = new Set();
+  const kept = [],
+    removed = [];
+  for (const item of items) {
+    if (seen.has(item.videoId)) removed.push(item);
+    else {
+      seen.add(item.videoId);
+      kept.push(item);
+    }
+  }
+  return { items: kept, removed };
+}
+
 export function revertAddition(draft, itemId) {
   if (draft.original.some((item) => item.itemId === itemId)) {
     throw new Error('Only a staged addition can be reverted here.');

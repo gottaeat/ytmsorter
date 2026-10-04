@@ -16,6 +16,7 @@ import {
   moveSelection,
   transferItems,
   removeItems,
+  deduplicateItems,
   withSystemPlaylists,
   revertAddition,
   revertRemoval,
@@ -98,10 +99,9 @@ const current = () =>
 const dirty = () => Object.values(state.drafts).filter((d) => diffDraft(d).dirty);
 const newId = () => `new:${crypto.randomUUID()}`;
 state.layout = normalizeLayout(state.layout, state.drafts, state.active);
-// Restore data and dimensions, but let the user choose which editors to open.
-state.layout.open = [];
-state.layout.minimized = [];
-state.active = null;
+// Reopen the saved views and choose a visible playlist for the shared controls.
+const visibleEditors = state.layout.open.filter((id) => !state.layout.minimized.includes(id));
+if (!visibleEditors.includes(state.active)) state.active = visibleEditors[0] || null;
 const paneUI = createPaneWorkspace({
   getState: () => state,
   isLocked: () => busy || !!state.pending || !hasWorkspaceLock,
@@ -143,6 +143,9 @@ function appendLog(message, kind, at) {
   $('activity-log').scrollTop = $('activity-log').scrollHeight;
   $('status').textContent = message;
   $('status').className = kind === 'error' ? 'error' : '';
+  $('task-status').textContent = message;
+  $('task-status').title = message;
+  $('task-status').className = kind === 'error' ? 'error' : '';
 }
 function log(message, kind = 'local', at = new Date().toISOString()) {
   appendLog(message, kind, at);
@@ -153,17 +156,17 @@ function log(message, kind = 'local', at = new Date().toISOString()) {
 function save() {
   if (!hasWorkspaceLock || startupError) return Promise.resolve(false);
   const data = clone({ ...state, undoHistory: history, redoHistory });
-  $('save-state').textContent = 'SAVING…';
+  $('save-state').textContent = 'Saving draft…';
   saveQueue = saveQueue.then(async () => {
     try {
       await writeRecord('workspace', data);
       saveFailed = false;
-      $('save-state').textContent = 'SAVED IN BROWSER';
+      $('save-state').textContent = 'Draft saved in this browser';
       $('retry-save').hidden = true;
       return true;
     } catch (error) {
       saveFailed = true;
-      $('save-state').textContent = 'NOT SAVED';
+      $('save-state').textContent = 'Draft not saved';
       $('retry-save').hidden = false;
       log(error.message, 'error');
       return false;
@@ -197,7 +200,7 @@ async function api(path, body, { quiet = false } = {}) {
   if (!response.ok) {
     if (response.status === 401) {
       authenticated = false;
-      setConnection('SESSION REJECTED', 'rejected');
+      setConnection('Connection expired · drafts kept', 'rejected');
       openSession();
     }
     const error = new Error(data.error || `Local request failed (${response.status}).`);
@@ -206,7 +209,10 @@ async function api(path, body, { quiet = false } = {}) {
     if (data.instanceId) workerInstance = data.instanceId;
     throw error;
   }
-  if (!quiet) log(`Local service ${path} · ${(performance.now() - started).toFixed(0)} ms`, 'read');
+  if (!quiet) {
+    log(`Local service ${path} · ${(performance.now() - started).toFixed(0)} ms`, 'read');
+    $('task-status').textContent = 'Ready when you are.';
+  }
   return data;
 }
 async function operation(label, action) {
@@ -219,7 +225,8 @@ async function operation(label, action) {
   renderControls();
   const started = Date.now();
   const timer = setInterval(() => {
-    $('operation-state').textContent = `WORKING · ${Math.floor((Date.now() - started) / 1000)}s`;
+    $('operation-state').textContent = `Working · ${Math.floor((Date.now() - started) / 1000)}s`;
+    $('task-status').textContent = `${label} (${Math.floor((Date.now() - started) / 1000)}s)`;
   }, 1000);
   try {
     await action();
@@ -234,7 +241,7 @@ async function operation(label, action) {
   } finally {
     clearInterval(timer);
     busy = false;
-    $('operation-state').textContent = 'IDLE';
+    $('operation-state').textContent = 'Ready';
     render();
   }
 }
@@ -362,6 +369,11 @@ function playlistId(value) {
   }
 }
 async function load(value, refresh = false) {
+  if (!value.trim()) {
+    $('playlist').focus();
+    log('Paste a YouTube playlist link to open it.', 'error');
+    return;
+  }
   const id = playlistId(value.trim());
   if (Object.hasOwn(state.drafts, id) && !refresh) {
     activate(id);
@@ -405,11 +417,11 @@ function renderLibrary() {
   for (const p of state.library.filter((x) =>
     `${x.title} ${x.id}`.toLocaleLowerCase().includes(query),
   )) {
-    const button = node('button', p.title, 'library-item');
+    const button = node('button', p.title, `library-item${state.active === p.id ? ' active' : ''}`);
     button.append(
       node(
         'small',
-        `${p.kind === 'shortcut' ? 'System shortcut · load on demand' : p.count || p.id}${state.drafts[p.id] ? ' · loaded' : ''}`,
+        `${p.kind === 'shortcut' ? 'Liked songs · copy to another playlist' : p.count || 'YouTube playlist'}${state.drafts[p.id] ? ' · saved here' : ''}`,
       ),
     );
     button.disabled =
@@ -426,21 +438,24 @@ function renderLibrary() {
         'p',
         state.library.length
           ? 'No matching playlists.'
-          : 'No library loaded. Fetch it or open a URL below.',
+          : 'Refresh your playlists or paste a link below.',
         'empty',
       ),
     );
+  $('library-guidance').textContent = authenticated
+    ? 'Choose a playlist to open it. Refresh to find new ones.'
+    : 'Connect YouTube to find your playlists.';
   $('loaded-list').replaceChildren();
   for (const d of Object.values(state.drafts)) {
     const button = node(
       'button',
-      `${diffDraft(d).dirty ? '* ' : ''}${d.info.title}`,
+      `${d.info.title}`,
       `library-item${state.active === d.info.id ? ' active' : ''}`,
     );
     button.append(
       node(
         'small',
-        `${d.items.length} tracks · ${d.stale ? 'RELOAD REQUIRED' : d.info.editable ? 'editable' : 'read-only'}`,
+        `${d.items.length} songs · ${d.stale ? 'check connection' : diffDraft(d).dirty ? 'changes to review' : d.info.editable ? 'ready to arrange' : 'copy only'}`,
       ),
     );
     button.addEventListener('click', () => activate(d.info.id));
@@ -462,8 +477,8 @@ function renderChrome() {
     '--changes-width',
     layout.changesHidden ? '0px' : `${layout.changesWidth}px`,
   );
-  root.style.setProperty('--library-sash', layout.libraryHidden ? '0px' : '5px');
-  root.style.setProperty('--changes-sash', layout.changesHidden ? '0px' : '5px');
+  root.style.setProperty('--library-sash', layout.libraryHidden ? '0px' : '10px');
+  root.style.setProperty('--changes-sash', layout.changesHidden ? '0px' : '10px');
   root.style.setProperty('--console-height', `${layout.consoleHeight}px`);
   for (const id of ['library', 'changes', 'console']) {
     $(id + '-pane').hidden = layout[id + 'Hidden'];
@@ -471,7 +486,7 @@ function renderChrome() {
     $('toggle-' + id).setAttribute('aria-pressed', !layout[id + 'Hidden']);
   }
   $('drop-mode').value = layout.dropMode;
-  $('edit-controls').hidden = !layout.toolsOpen;
+  $('edit-controls').hidden = !layout.toolsOpen || !current();
   $('toggle-edit-tools').setAttribute('aria-expanded', layout.toolsOpen);
 }
 function setupChrome() {
@@ -495,7 +510,7 @@ function setupChrome() {
     bindSash($(id + '-sash'), {
       axis: id === 'console' ? 'y' : 'x',
       reverse: id !== 'library',
-      read: () => state.layout[key],
+      read: () => $(id + '-pane').getBoundingClientRect()[id === 'console' ? 'height' : 'width'],
       min: () => minimum,
       max: () =>
         Math.min(
@@ -510,7 +525,7 @@ function setupChrome() {
       },
       end: () => save(),
       reset: () => {
-        state.layout[key] = id === 'console' ? 160 : id === 'library' ? 210 : 250;
+        state.layout[key] = id === 'console' ? 160 : id === 'library' ? 248 : 288;
         renderChrome();
       },
     });
@@ -550,10 +565,7 @@ function renderChanges() {
       node('h3', d.info.title),
       node('p', `+ ${diff.added.length} additions`, 'count-add'),
       node('p', `− ${diff.removed.length} removals`, 'count-remove'),
-      node(
-        'p',
-        `${diff.reordered ? `${diff.orderChanges.length} existing tracks changed relative order` : 'Existing tracks keep their relative order'} · ≤ ${budget(d)} writes`,
-      ),
+      node('p', diff.reordered ? `${diff.orderChanges.length} songs reordered` : 'Song order kept'),
     );
     const locked = busy || !!state.pending || !hasWorkspaceLock || d.stale || !d.info.editable;
     if (diff.added.length) {
@@ -615,8 +627,7 @@ function renderChanges() {
     }
     if (diff.orderChanges.length) {
       const section = node('details', undefined, 'order-changes');
-      section.open = true;
-      section.append(node('summary', `ORDER CHANGES · ${diff.orderChanges.length} tracks`));
+      section.append(node('summary', `See reordered songs (${diff.orderChanges.length})`));
       const list = node('ul', undefined, 'staged-additions');
       for (const { item, from, to, fromRank, toRank } of diff.orderChanges) {
         const entry = node('li', undefined, 'staged-addition');
@@ -695,11 +706,27 @@ function renderChanges() {
       block.append(node('p', 'Reconnect & keep edits to check this draft safely.', 'warning'));
     $('change-list').append(block);
   }
-  if (!changed.length) $('change-list').append(node('p', 'No staged changes.', 'empty'));
+  if (!changed.length) {
+    const empty = node('div', undefined, 'empty');
+    empty.append(
+      node('span', '✓', 'empty-symbol'),
+      node('h3', 'All caught up'),
+      node('p', 'Your changes will appear here as you arrange your songs.'),
+    );
+    $('change-list').append(empty);
+  }
   const writes = changed.reduce((sum, d) => sum + budget(d), 0);
   $('commit-budget').textContent = changed.length
-    ? `Budget ≤ ${writes} writes · limit ${maxUpdates || 'unlimited'} · ${writeDelayMs / 1000}s minimum spacing. Reads and verification take additional time.`
-    : 'YouTube writes only on commit.';
+    ? maxUpdates && writes > maxUpdates
+      ? 'Too many changes for one save. Undo some edits to continue.'
+      : !authenticated
+        ? 'Connect YouTube before saving your changes.'
+        : changed.some((d) => d.stale)
+          ? 'Check your saved edits with Reconnect & keep edits before saving.'
+          : `${changed.length} playlist${changed.length === 1 ? '' : 's'} ready to review. Saving can take a few minutes.`
+    : 'Nothing to save yet.';
+  $('commit-budget').title =
+    `Up to ${writes} YouTube writes; limit ${maxUpdates || 'unlimited'}. Checking playlists may take additional time.`;
   $('review').disabled =
     busy ||
     !!state.pending ||
@@ -714,7 +741,17 @@ function renderControls() {
   const d = current();
   const locked = busy || !!state.pending || !hasWorkspaceLock;
   const canEdit = !!d?.info.editable && !d.stale && !locked;
-  for (const id of ['sort', 'reset', 'add']) $(id).disabled = !canEdit;
+  $('editor-area').setAttribute('aria-busy', busy || !!state.pending);
+  $('library-pane').setAttribute('aria-busy', busy);
+  for (const id of ['sort', 'reset', 'add', 'add-toggle']) $(id).disabled = !canEdit;
+  const duplicates = d ? deduplicateItems(d.items).removed.length : 0;
+  $('deduplicate').disabled = !canEdit || !duplicates;
+  $('deduplicate').textContent = duplicates
+    ? `Remove duplicates (${duplicates})`
+    : 'Remove duplicates';
+  $('deduplicate').title = duplicates
+    ? `Remove ${duplicates} extra ${duplicates === 1 ? 'copy' : 'copies'}, keeping the first occurrence of each YouTube video. Applies to the whole playlist, including songs hidden by search. Review before saving.`
+    : 'No duplicate videos in this playlist. Different uploads of the same song are kept.';
   for (const id of [
     'move-top',
     'move-up',
@@ -734,9 +771,37 @@ function renderControls() {
   for (const id of ['connect', 'disconnect', 'clear-workspace']) $(id).disabled = locked;
   $('verify-session').disabled = locked || !credentials;
   $('recover-drafts').disabled = locked || !Object.keys(state.drafts).length;
-  $('selection-count').textContent = `${selected.size} selected`;
+  $('select-all').disabled = !d || locked || !visibleItems().length;
+  $('select-none').disabled = !selected.size;
+  $('selection-count').textContent =
+    `${selected.size} song${selected.size === 1 ? '' : 's'} selected`;
+  $('playlist-actions').hidden = !d;
+  // Keep drop targets still while the pointer is captured. Reveal actions after the drop.
+  if (!document.body.classList.contains('track-drag-active'))
+    $('selection-actions').hidden = !d || !selected.size;
+  const emptyEditor = !state.layout.open.length;
+  $('welcome').hidden = !emptyEditor;
+  $('playlist-panes').hidden = emptyEditor;
+  $('reload').hidden = !d;
+  $('recover-drafts').hidden = !Object.values(state.drafts).some((draft) => draft.stale);
+  $('resume-workspace').hidden = !Object.keys(state.drafts).length;
+  $('resume-workspace').disabled = busy;
+  $('start-action').disabled = locked;
+  $('start-action').textContent = authenticated ? 'Find my playlists' : 'Connect YouTube';
+  $('welcome-title').textContent = Object.keys(state.drafts).length
+    ? 'Pick up where you left off.'
+    : 'A good playlist deserves a little care.';
+  $('welcome-description').textContent = Object.keys(state.drafts).length
+    ? 'Your saved playlists and edits are still here. Open them to keep arranging, or find something new in your library.'
+    : 'Bring your playlists together, sort by artist, or move songs into a new home. You decide when changes go to YouTube.';
+  $('session-toggle').textContent = authenticated ? 'YouTube connection' : 'Connect YouTube';
+  $('connect').disabled = locked || !$('cookies').value.trim();
+  if (state.pending) {
+    state.layout.consoleHidden = false;
+    renderChrome();
+  }
   const destination = $('destination').value;
-  $('destination').replaceChildren(node('option', 'Choose loaded destination…'));
+  $('destination').replaceChildren(node('option', 'Choose a playlist…'));
   $('destination').firstChild.value = '';
   for (const target of Object.values(state.drafts).filter(
     (x) => x !== d && x.info.editable && !x.stale,
@@ -746,14 +811,19 @@ function renderControls() {
     $('destination').append(option);
   }
   $('destination').value = destination;
+  const canSend = !!$('destination').value;
+  $('copy').disabled ||= !canSend;
+  $('transfer').disabled ||= !canSend;
+  $('transfer-guidance').hidden = $('destination').options.length > 1;
   renderChanges();
 }
 function updateActiveHeading() {
   const d = current();
-  $('preview-title').textContent = d ? `Editing: ${d.info.title}` : 'Open a playlist to start';
+  const duplicates = d ? deduplicateItems(d.items).removed.length : 0;
+  $('preview-title').textContent = d ? d.info.title : 'Your playlist space';
   $('preview-stats').textContent = d
-    ? `${d.items.length} tracks · ${d.info.id} · loaded ${new Date(d.loadedAt).toLocaleTimeString()}`
-    : 'Load a playlist to begin.';
+    ? `${d.items.length} songs${duplicates ? ` · ${duplicates} duplicate ${duplicates === 1 ? 'copy' : 'copies'}` : ''} · ${d.info.editable ? 'Arrange freely. Review before saving.' : 'Copy songs into an editable playlist.'}`
+    : 'Open a playlist, make it yours, save when ready.';
   $('permission-warning').hidden = !d || (d.info.editable && !d.stale);
   $('permission-warning').textContent = d?.stale
     ? 'Your edits are saved. Use Reconnect & keep edits to compare with YouTube without discarding your order.'
@@ -768,6 +838,36 @@ function render() {
   renderControls();
 }
 
+$('start-action').onclick = () => {
+  if (!authenticated) return openSession();
+  state.layout.libraryHidden = false;
+  renderChrome();
+  if (state.library.some((p) => p.kind !== 'shortcut')) {
+    $('library-filter').focus();
+    log('Choose a playlist from Your playlists, or paste a playlist link.');
+  } else $('library-refresh').click();
+};
+$('resume-workspace').onclick = () => {
+  state.layout.open = Object.keys(state.drafts);
+  state.layout.minimized = [];
+  activate(state.layout.open[0] || null);
+};
+$('add-toggle').onclick = () => {
+  state.layout.toolsOpen = true;
+  renderChrome();
+  save();
+  $('add-videos').focus();
+};
+$('destination').onchange = renderControls;
+$('cookies').oninput = renderControls;
+// Menus dismiss after an action, on outside clicks, and with Escape.
+document.addEventListener('click', (event) => {
+  const menu = document.querySelector('.workspace-menu');
+  if (!menu.contains(event.target) || event.target.closest('button')) menu.open = false;
+});
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') document.querySelector('.workspace-menu').open = false;
+});
 $('library-refresh').onclick = () =>
   operation('Fetching playlist library from YouTube…', async () => {
     state.library = withSystemPlaylists((await api('/api/library', {})).playlists);
@@ -885,6 +985,18 @@ $('remove').onclick = () =>
     d.items = removeItems(d.items, selected);
     selected.clear();
   });
+$('deduplicate').onclick = () => {
+  const d = current();
+  if (!d || $('deduplicate').disabled) return;
+  const result = deduplicateItems(d.items);
+  edit(
+    `Removed ${result.removed.length} duplicate ${result.removed.length === 1 ? 'copy' : 'copies'} from “${d.info.title}”; first occurrences kept`,
+    (draft) => {
+      draft.items = result.items;
+      for (const item of result.removed) selected.delete(item.itemId);
+    },
+  );
+};
 for (const [id, remove] of [
   ['copy', false],
   ['transfer', true],
@@ -971,7 +1083,7 @@ async function storeCredentials(nextCredentials) {
 }
 function connected() {
   authenticated = true;
-  setConnection(`CONNECTED / ${sessionName() || 'CHANNEL NAME UNAVAILABLE'}`, 'connected');
+  setConnection(`Connected · ${sessionName() || 'channel name unavailable'}`, 'connected');
   $('connect-panel').close();
 }
 async function recoverSavedDrafts(includeEdited = false) {
@@ -1039,7 +1151,7 @@ $('disconnect').onclick = () =>
     credentials = null;
     $('cookies').value = '';
     authenticated = false;
-    setConnection('DISCONNECTED', 'disconnected');
+    setConnection('Not connected', 'disconnected');
     $('session-identity').textContent = 'No saved session.';
     log('Browser-stored credentials removed. Drafts remain; YouTube itself was not signed out.');
   });
@@ -1055,11 +1167,9 @@ $('review').onclick = () => {
   content.replaceChildren();
   for (const d of dirty()) {
     const diff = diffDraft(d);
-    content.append(
-      node('h3', `${d.info.title} · ${d.items.length} final tracks · ≤ ${budget(d)} writes`),
-    );
+    content.append(node('h3', `${d.info.title} · ${d.items.length} songs after saving`));
     if (diff.removed.length) {
-      content.append(node('p', 'REMOVE FROM THIS PLAYLIST', 'removed'));
+      content.append(node('p', 'Songs to remove from this playlist', 'removed'));
       const removed = node('ol');
       for (const x of diff.removed) {
         const li = node('li', undefined, 'removed');
@@ -1150,7 +1260,7 @@ async function watchCommit() {
         }
         if (job.authRequired) {
           authenticated = false;
-          setConnection('SESSION EXPIRED / EDITS SAVED', 'rejected');
+          setConnection('Connection expired · drafts kept', 'rejected');
           openSession();
         }
         save();
@@ -1323,7 +1433,7 @@ $('import-file').onchange = async () => {
     log(error.message, 'error');
   }
 };
-$('density').value = state.preferences?.density || 'compact';
+$('density').value = state.preferences?.density || 'comfortable';
 document.body.dataset.density = $('density').value;
 $('density').onchange = () => {
   document.body.dataset.density = $('density').value;
@@ -1346,29 +1456,29 @@ for (const id of ['artist-source', 'within-artist', 'reverse', 'overrides'])
   });
 $('info-close').onclick = () => $('info-dialog').close();
 $('help').onclick = () => {
-  $('info-title').textContent = 'OPERATOR GUIDE';
+  $('info-title').textContent = 'Getting started';
   const content = $('info-content');
   content.replaceChildren();
   for (const [title, text] of [
     [
-      '01 / Load',
-      'Connect a browser session, then Fetch your library or paste a playlist URL. Loaded playlists are cached; switching between them does not contact YouTube.',
+      '1. Open a playlist',
+      'Connect a browser session, then Refresh your library or paste a playlist URL. Loaded playlists are cached; switching between them does not contact YouTube.',
     ],
     [
-      '02 / Stage',
-      'Open playlists side by side from the library. The highlighted pane is active: shared controls apply to it. Drag the grip to reorder or move selected tracks between panes; hold Alt/Ctrl/⌘ to copy. Read-only sources only copy. Tools contains artist options, positions and additions. Each change stays in this browser.',
+      '2. Arrange your songs',
+      'Choose a playlist, then use Sort by artist or Add songs. Drag songs to reorder them. Select songs to show move, remove, and copy controls. Dragging to another playlist copies by default; change this under More options if you prefer moves. The green line marks the playlist you are editing. Your changes stay in this browser until you save.',
     ],
     [
-      '03 / Review',
-      'The commit buffer lets you revert individual additions/removals and order changes. Reverts affect only the named playlist. Undo reverses the whole last action, including both sides of a transfer.',
+      '3. Review your changes',
+      'Your changes panel lets you revert individual additions/removals and order changes. Reverts affect only the named playlist. Undo reverses the whole last action, including both sides of a transfer.',
     ],
     [
-      '04 / Commit',
+      '4. Save to YouTube',
       'Save intent in the browser, check live snapshots, add and verify destinations, remove sources, then reorder and verify. Writes are paced, not atomic. Never assume an interrupted commit rolled back.',
     ],
     [
       'Pane layout',
-      'Drag dividers to resize; arrow keys work on focused dividers and double-click resets sizes. − minimizes a playlist to a vertical tab; × closes its view but keeps its draft. Use Library / Commit buffer / Activity to restore utility panels. Sizes persist, but the middle editor starts empty on reload. Reset layout shows all loaded drafts.',
+      'Drag dividers to resize; arrow keys work on focused dividers and double-click resets sizes. − minimizes a playlist to a vertical tab; × closes its view but keeps its draft. Use Workspace → Playlists / Changes / Activity to restore utility panels. Your open playlists and panel sizes return on reload. Reset layout shows all saved playlists.',
     ],
     [
       'Persistence',
@@ -1391,7 +1501,7 @@ $('help').onclick = () => {
   $('info-dialog').showModal();
 };
 $('receipts').onclick = () => {
-  $('info-title').textContent = 'COMMIT HISTORY / BROWSER RECEIPTS';
+  $('info-title').textContent = 'Save history';
   const content = $('info-content');
   content.replaceChildren();
   const receipts = state.receipts || (state.lastCommit ? [state.lastCommit] : []);
@@ -1446,16 +1556,15 @@ try {
   writeDelayMs = session.writeDelayMs;
   setConnection(
     session.demo
-      ? 'DEMO / Demo operator'
+      ? 'Demo · sample playlists'
       : authenticated
-        ? `SAVED SESSION / ${sessionName() || 'VERIFY TO IDENTIFY'}`
-        : 'DISCONNECTED',
+        ? `Saved connection · ${sessionName() || 'check to identify channel'}`
+        : 'Not connected',
     session.demo ? 'demo' : authenticated ? 'saved' : 'disconnected',
   );
   $('connection-state').title =
-    'Saved sessions are checked on request, not polled. Use Session → Verify saved session to refresh the channel name.';
-  if (!authenticated) openSession();
-  $('version').textContent = `v${session.version} · STATELESS WORKER`;
+    'Saved sessions are checked on request, not polled. Use YouTube connection → Check saved connection to refresh the channel name.';
+  $('version').textContent = `ytmsorter v${session.version}`;
   if (hasWorkspaceLock && state.pending?.instanceId !== workerInstance && state.pending) {
     finishInterrupted(
       'The worker changed or this is a legacy commit. Outcome may be partial; use Reconnect & keep edits before committing again. Your target order is saved. No writes were replayed.',
@@ -1465,7 +1574,7 @@ try {
   log(error.message, 'error');
 }
 if (startupError) {
-  $('save-state').textContent = 'RESTORE FAILED';
+  $('save-state').textContent = 'Could not restore drafts';
   log(
     `Could not restore the saved workspace: ${startupError} Existing storage was not overwritten. Import a known-good backup, or fix browser storage and reload.`,
     'error',
@@ -1473,7 +1582,7 @@ if (startupError) {
 }
 if (!hasWorkspaceLock) {
   $('tab-warning').hidden = false;
-  $('save-state').textContent = 'READ-ONLY TAB';
+  $('save-state').textContent = 'Viewing only · another tab is editing';
 } else if (!startupError) {
   if (await save()) {
     localStorage.removeItem(storageKey);

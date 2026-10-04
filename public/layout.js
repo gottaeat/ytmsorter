@@ -13,13 +13,13 @@ export function normalizeLayout(input = {}, drafts = {}, active = null) {
     weights: Object.fromEntries(
       Object.keys(drafts).map((id) => [id, clamp(input.weights?.[id], 0.1, 10000, 1)]),
     ),
-    libraryWidth: clamp(input.libraryWidth, 160, 500, 210),
-    changesWidth: clamp(input.changesWidth, 200, 600, 250),
+    libraryWidth: clamp(input.libraryWidth, 160, 500, 248),
+    changesWidth: clamp(input.changesWidth, 200, 600, 288),
     consoleHeight: clamp(input.consoleHeight, 32, 500, 160),
     libraryHidden: input.libraryHidden === true,
     changesHidden: input.changesHidden === true,
-    consoleHidden: input.consoleHidden === true,
-    dropMode: input.dropMode === 'copy' ? 'copy' : 'move',
+    consoleHidden: input.consoleHidden !== false,
+    dropMode: input.dropMode === 'move' ? 'move' : 'copy',
     toolsOpen: input.toolsOpen === true,
   };
 }

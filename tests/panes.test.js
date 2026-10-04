@@ -140,3 +140,14 @@ test('layout sanitizes foreign IDs and unsafe sizes; closed/minimized panes rema
   assert.equal(restored.active, null);
   assert.deepEqual(restored.layout, layout);
 });
+
+test('new workspaces keep advanced panels quiet and copy between playlists by default', () => {
+  const layout = normalizeLayout();
+  assert.equal(layout.consoleHidden, true);
+  assert.equal(layout.toolsOpen, false);
+  assert.equal(layout.dropMode, 'copy');
+  const explicit = normalizeLayout({ consoleHidden: false, toolsOpen: true, dropMode: 'move' });
+  assert.equal(explicit.consoleHidden, false);
+  assert.equal(explicit.toolsOpen, true);
+  assert.equal(explicit.dropMode, 'move');
+});

@@ -6,220 +6,301 @@
     <meta name="color-scheme" content="dark" />
     <meta
       name="description"
-      content="A local-first YouTube playlist workbench. Stage, review and commit with confidence."
+      content="Give your YouTube playlists a little order. Arrange songs, keep your drafts, and review before saving to YouTube."
     />
-    <title>ytmsorter / Playlist control</title>
+    <title>ytmsorter · Your playlists, in order</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="/app.css" />
     <script src="/app.js" type="module"></script>
   </head>
   <body>
     <header class="masthead">
-      <h1>YT<span>/</span> PLAYLIST CONTROL</h1>
-      <span class="machine-label">LOCAL CONSOLE · STAGED WRITES</span
-      ><span id="connection-state" role="status" data-state="checking">CHECKING SESSION</span
-      ><button id="session-toggle" aria-haspopup="dialog">Session</button>
+      <a class="brand" href="/" aria-label="ytmsorter home"
+        ><span class="brand-mark" aria-hidden="true">♫</span>
+        <h1>ytmsorter</h1></a
+      >
+      <span class="brand-caption">Your playlists, in order.</span>
+      <span id="connection-state" role="status" data-state="checking">Checking connection…</span>
+      <button id="session-toggle" aria-haspopup="dialog">Connect YouTube</button>
     </header>
     <nav class="workspace-bar" aria-label="Workspace tools">
-      <span id="save-state" role="status">OPENING BROWSER STORAGE…</span
-      ><button id="retry-save" hidden>Retry save</button
-      ><button id="export-workspace">Export workspace</button
-      ><button id="import-workspace">Import workspace</button
-      ><input id="import-file" type="file" accept="application/json,.json" hidden /><button
-        id="receipts"
-      >
-        Commit history</button
-      ><label
-        >Density
-        <select id="density">
-          <option value="compact">Compact</option>
-          <option value="comfortable">Comfortable</option>
-        </select></label
-      ><button id="help">Help</button>
-      <div class="view-tools" aria-label="Panel visibility">
-        <button id="toggle-library" aria-pressed="true">Library</button>
-        <button id="toggle-changes" aria-pressed="true">Commit buffer</button>
-        <button id="toggle-console" aria-pressed="true">Activity</button>
-        <button id="reset-layout">Reset layout</button>
-      </div>
+      <ol class="workflow" aria-label="How it works">
+        <li><span>1</span> Open a playlist</li>
+        <li><span>2</span> Arrange songs</li>
+        <li><span>3</span> Review &amp; save</li>
+      </ol>
+      <span id="save-state" role="status">Opening saved drafts…</span>
+      <button id="retry-save" hidden>Retry save</button>
+      <button id="help">Help</button>
+      <details class="workspace-menu">
+        <summary>Workspace <span aria-hidden="true">⌄</span></summary>
+        <div class="menu-content">
+          <p class="menu-label">Backups</p>
+          <button id="export-workspace">Export workspace</button>
+          <button id="import-workspace">Import workspace</button>
+          <input id="import-file" type="file" accept="application/json,.json" hidden />
+          <button id="receipts">Save history</button>
+          <label
+            >Song spacing<select id="density">
+              <option value="comfortable">Comfortable</option>
+              <option value="compact">Compact</option>
+            </select></label
+          >
+          <p class="menu-label">Show panels</p>
+          <div class="view-tools" aria-label="Panel visibility">
+            <button id="toggle-library" aria-pressed="true">Playlists</button>
+            <button id="toggle-changes" aria-pressed="true">Changes</button>
+            <button id="toggle-console" aria-pressed="false">Activity</button>
+          </div>
+          <button id="reset-layout">Reset layout</button>
+          <button id="clear-workspace" class="danger-text">Clear local workspace</button>
+        </div>
+      </details>
     </nav>
     <p id="tab-warning" class="warning" hidden>
-      This workspace is open in another tab, or this browser does not support safe tab locking.
-      Editing is disabled here. Close the other tab and refresh.
+      This workspace is being edited in another tab, or this browser cannot safely lock it. Close
+      the other tab and refresh to edit here.
     </p>
     <dialog id="connect-panel" class="connection" aria-labelledby="session-title">
       <div class="session-heading">
-        <h2 id="session-title">Browser session</h2>
-        <button id="session-close" aria-label="Close session dialog" autofocus>×</button>
+        <div>
+          <p class="eyebrow">One-time setup</p>
+          <h2 id="session-title">Connect your YouTube account</h2>
+        </div>
+        <button id="session-close" aria-label="Close connection dialog" autofocus>×</button>
       </div>
-      <p id="session-identity" class="muted">No saved session.</p>
+      <p>Connect to see your playlists and save changes. Your drafts stay in this browser.</p>
+      <p id="session-identity" class="muted">No account connected yet.</p>
       <p id="session-error" class="warning" role="alert" hidden></p>
-      <p>
-        Use the complete Cookie request header from a signed-in YouTube tab: DevTools → Network →
-        reload → youtube.com request → Request Headers → Cookie. A Netscape cookies.txt export also
-        works. Paste only here; never into chat.
-      </p>
-      <label for="cookies">Cookie header / export</label
+      <details class="setup-guide" open>
+        <summary>How to get your YouTube cookies</summary>
+        <ol>
+          <li>Open YouTube in your browser, sign in, and choose your channel.</li>
+          <li>Open Developer Tools → <strong>Network</strong>, then reload YouTube.</li>
+          <li>
+            Select a request to <strong>www.youtube.com</strong>. Under
+            <strong>Request Headers</strong>, copy the complete <strong>Cookie</strong> value.
+          </li>
+          <li>Paste it below and choose <strong>Connect YouTube</strong>.</li>
+        </ol>
+        <p class="muted">
+          A Netscape cookies.txt export also works. These credentials give account access: paste
+          them only into this local app.
+        </p>
+      </details>
+      <label for="cookies">YouTube cookies</label
       ><textarea
         id="cookies"
         autocomplete="off"
         spellcheck="false"
-        placeholder="Credentials stay in this browser; the worker uses them only for your requests"
+        placeholder="Paste the complete Cookie header here"
       ></textarea>
       <label class="check"
-        ><input id="remember-cookies" type="checkbox" checked /> Remember cookies in this
+        ><input id="remember-cookies" type="checkbox" checked /> Remember my connection in this
         browser</label
       >
-      <p class="warning">
-        Cookies grant account access. Saved cookies are readable by this browser profile and
-        same-origin scripts; they are not encrypted with a separate password. Uncheck to keep them
-        only for this tab's session. Workspace exports never include credentials.
+      <p class="hint">
+        Saved cookies are not encrypted by this app. Uncheck to keep them only for this tab. Backups
+        never include cookies.
       </p>
-      <div class="toolbar">
-        <label
-          >Account index
-          <input id="account-index" type="number" min="0" max="20" value="0" /></label
-        ><label
-          >Delegated channel
-          <input id="channel-id" autocomplete="off" placeholder="X-Goog-PageId (optional)" /></label
-        ><button id="connect" class="accent">Connect / replace cookies</button
-        ><button id="verify-session">Verify saved session</button
+      <details class="advanced-account">
+        <summary>Multiple accounts or Brand Accounts</summary>
+        <div class="toolbar">
+          <label
+            >Account index<input
+              id="account-index"
+              type="number"
+              min="0"
+              max="20"
+              value="0" /></label
+          ><label
+            >Delegated channel ID<input
+              id="channel-id"
+              autocomplete="off"
+              placeholder="X-Goog-PageId (optional)"
+          /></label>
+        </div>
+      </details>
+      <div class="toolbar connection-actions">
+        <button id="connect" class="accent">Connect YouTube</button
+        ><button id="verify-session">Check saved connection</button
         ><button id="disconnect">Disconnect</button>
       </div>
-      <p class="muted">
-        Unofficial YouTube interface. Slow writes reduce request volume; they cannot guarantee
-        freedom from account restrictions.
+      <p class="hint">
+        This app uses an unofficial YouTube interface. It is intended for your own playlists on
+        localhost.
       </p>
     </dialog>
     <main id="workspace">
-      <aside id="library-pane" class="library pane">
+      <aside id="library-pane" class="library pane" aria-label="Your playlists">
         <div class="pane-title">
-          <h2>PLAYLIST LIBRARY</h2>
-          <button id="library-refresh">Fetch</button>
-          <button id="minimize-library" class="icon-button" aria-label="Minimize library">−</button>
+          <h2>Your playlists</h2>
+          <button id="library-refresh" title="Get your current playlist list from YouTube">
+            Refresh</button
+          ><button id="minimize-library" class="icon-button" aria-label="Hide playlists">−</button>
         </div>
-        <p class="hint">Fetch on demand. Saved playlists may be read-only.</p>
         <input
           id="library-filter"
-          aria-label="Filter library"
-          placeholder="Filter cached library…"
+          aria-label="Search your playlists"
+          placeholder="Search playlists…"
         />
+        <p id="library-guidance" class="hint">Connect YouTube to find your playlists.</p>
         <div id="library-list" class="library-list"></div>
         <div class="load-box">
-          <label for="playlist">Open playlist URL / ID</label
-          ><input id="playlist" placeholder="https://youtube.com/playlist?list=…" /><button
+          <label for="playlist">Have a playlist link?</label
+          ><input id="playlist" placeholder="Paste a YouTube playlist link" /><button
             id="load"
             class="wide"
           >
-            Load tracks
+            Open playlist
           </button>
         </div>
-        <div class="pane-title"><h2>SAVED DRAFTS</h2></div>
+        <div class="pane-title saved-title"><h2>Saved on this browser</h2></div>
         <div id="loaded-list" class="loaded-list"></div>
-        <p class="hint">
-          Switching loaded playlists is local. Drafts survive a page reload on this browser.
-        </p>
-        <button id="clear-workspace">Clear local workspace</button>
+        <p class="hint">Drafts save automatically as you work.</p>
       </aside>
       <div
         id="library-sash"
         class="sash"
         role="separator"
         tabindex="0"
-        aria-label="Resize library"
+        aria-label="Resize playlists panel"
         aria-orientation="vertical"
       ></div>
-      <section id="editor-area" class="editor pane">
+      <section id="editor-area" class="editor pane" aria-label="Arrange your songs">
         <p id="workspace-message" class="warning" role="alert" hidden></p>
         <div class="pane-title editor-title">
           <div>
-            <h2 id="preview-title">02 / TRACK EDITOR</h2>
-            <span id="preview-stats">Load a playlist to begin.</span>
+            <p class="eyebrow">Arrange</p>
+            <h2 id="preview-title">Make room for your next favourite.</h2>
+            <span id="preview-stats">A little order for the music you love.</span>
           </div>
-          <button id="recover-drafts">Reconnect &amp; keep edits</button>
-          <button id="reload" disabled title="Replaces the draft after confirmation">
-            Reload / discard draft
+          <button id="recover-drafts" hidden>Reconnect &amp; keep edits</button
+          ><button
+            id="reload"
+            disabled
+            title="Get the latest songs from YouTube. You will be asked before replacing any edits."
+          >
+            Reload playlist
           </button>
         </div>
         <p id="permission-warning" class="warning" hidden></p>
-        <div class="toolbar quick-actions">
-          <button id="sort" class="accent">Sort preview</button>
-          <button id="undo" title="Undo · Ctrl/⌘ Z">Undo</button>
-          <button id="redo" title="Redo · Ctrl/⌘ Shift Z">Redo</button>
-          <button id="remove" class="danger-text">Remove selected</button>
-          <span id="selection-count">0 selected</span>
-          <button id="select-all">Select visible</button>
-          <button id="select-none">Clear selection</button>
-          <button id="toggle-edit-tools" aria-expanded="false" aria-controls="edit-controls">
-            More tools ▾
-          </button>
+        <div id="welcome" class="welcome">
+          <span class="welcome-art" aria-hidden="true">♫</span>
+          <p class="eyebrow">Your music. Your order.</p>
+          <h2 id="welcome-title">A good playlist deserves a little care.</h2>
+          <p id="welcome-description">
+            Bring your playlists together, sort by artist, or move songs into a new home. You decide
+            when changes go to YouTube.
+          </p>
+          <div class="welcome-actions">
+            <button id="start-action" class="accent">Connect YouTube</button
+            ><button id="resume-workspace" hidden>Open saved playlists</button>
+          </div>
+          <div class="welcome-steps">
+            <div>
+              <span>1</span><strong>Pick a playlist</strong>
+              <p>Find it in your library or paste a link.</p>
+            </div>
+            <div>
+              <span>2</span><strong>Make it yours</strong>
+              <p>Sort, drag, add, or move songs.</p>
+            </div>
+            <div>
+              <span>3</span><strong>Save when ready</strong>
+              <p>Review every change before saving.</p>
+            </div>
+          </div>
+          <p class="welcome-note">
+            Your work saves here automatically. YouTube changes only after you review and confirm.
+          </p>
         </div>
-        <div class="toolbar transfer-bar">
-          <label for="destination">Send selected songs to</label>
-          <select id="destination" aria-label="Destination loaded playlist"></select>
-          <button id="copy">Copy selected</button><button id="transfer">Move selected</button>
-          <label class="inline"
-            >Dragging between playlists
-            <select id="drop-mode" aria-label="Drag between playlists">
-              <option value="move">Moves songs</option>
-              <option value="copy">Copies songs</option>
-            </select>
-          </label>
+        <div id="playlist-actions" class="toolbar quick-actions" hidden>
+          <button id="sort" class="accent">Sort by artist</button
+          ><button id="add-toggle">Add songs</button
+          ><button
+            id="deduplicate"
+            title="Keep the first copy of each YouTube video in this playlist, including songs hidden by search. Review removals before saving."
+          >
+            Remove duplicates</button
+          ><button id="toggle-edit-tools" aria-expanded="false" aria-controls="edit-controls">
+            More options</button
+          ><span class="toolbar-spacer"></span
+          ><button id="undo" title="Undo · Ctrl/⌘ Z">Undo</button
+          ><button id="redo" title="Redo · Ctrl/⌘ Shift Z">Redo</button
+          ><button id="select-all">Select all shown</button>
+        </div>
+        <div id="selection-actions" class="selection-actions" hidden>
+          <div class="toolbar">
+            <strong id="selection-count" role="status">0 selected</strong
+            ><button id="select-none">Deselect</button><span class="toolbar-spacer"></span
+            ><button id="move-up">↑ Move up</button><button id="move-down">↓ Move down</button
+            ><button id="remove" class="danger-text">Remove</button>
+          </div>
+          <div class="toolbar transfer-bar">
+            <label for="destination">To playlist</label
+            ><select id="destination" aria-label="Destination playlist"></select
+            ><button id="copy">Copy songs</button><button id="transfer">Move songs</button>
+            <p id="transfer-guidance" class="hint" hidden>
+              Open another editable playlist to copy or move songs.
+            </p>
+          </div>
         </div>
         <div id="edit-controls" hidden>
           <div class="toolbar sortbar">
             <label
-              >Artist source
-              <select id="artist-source">
-                <option value="auto">Channel → title</option>
-                <option value="channel">Channel</option>
-                <option value="title">Artist - title</option>
+              >Find artists using<select id="artist-source">
+                <option value="auto">Channel, then song title</option>
+                <option value="channel">Channel name</option>
+                <option value="title">Artist in song title</option>
               </select></label
             ><label
-              >Within artist
-              <select id="within-artist">
-                <option value="original">Current order</option>
-                <option value="title">Track title</option>
+              >Songs by the same artist<select id="within-artist">
+                <option value="original">Keep current order</option>
+                <option value="title">Sort by song title</option>
               </select></label
-            ><label class="check"><input id="reverse" type="checkbox" /> Z → A</label
-            ><button id="reset">Reset draft</button>
+            ><label class="check"><input id="reverse" type="checkbox" /> Sort Z to A</label>
+          </div>
+          <div class="toolbar">
+            <label class="group-label" for="add-videos">Add songs</label
+            ><input
+              id="add-videos"
+              aria-label="Video URLs or IDs to add"
+              placeholder="Paste YouTube video links, separated by spaces or commas"
+            /><button id="add">Add to playlist</button>
+          </div>
+          <div class="toolbar">
+            <span class="group-label">Position</span><button id="move-top">To top</button
+            ><button id="move-bottom">To bottom</button
+            ><label class="inline"
+              >To position <input id="move-position" type="number" min="1" value="1" /></label
+            ><button id="move-to">Move</button>
+          </div>
+          <div class="toolbar">
+            <label class="inline"
+              >Dragging to another playlist<select
+                id="drop-mode"
+                aria-label="Drag between playlists"
+              >
+                <option value="copy">Copies songs</option>
+                <option value="move">Moves songs</option>
+              </select></label
+            ><button id="reset" class="danger-text">Discard playlist edits</button>
           </div>
           <details class="overrides">
-            <summary>Artist overrides (local JSON)</summary>
+            <summary>Advanced: artist corrections (JSON)</summary>
             <textarea
               id="overrides"
               spellcheck="false"
               placeholder='{"dQw4w9WgXcQ":"Rick Astley"}'
             ></textarea>
           </details>
-          <div class="toolbar">
-            <input
-              id="track-filter"
-              aria-label="Filter loaded tracks"
-              placeholder="Filter tracks locally…"
-            />
-          </div>
-          <div class="toolbar">
-            <span class="group-label">POSITION</span><button id="move-top">Top</button
-            ><button id="move-up">↑ Up</button><button id="move-down">↓ Down</button
-            ><button id="move-bottom">Bottom</button
-            ><label class="inline"
-              >To <input id="move-position" type="number" min="1" value="1" /></label
-            ><button id="move-to">Move</button>
-          </div>
-          <div class="toolbar">
-            <span class="group-label">ADD</span
-            ><input
-              id="add-videos"
-              aria-label="Video URLs or IDs to add"
-              placeholder="Video URLs / IDs, separated by spaces or commas"
-            /><button id="add">Stage additions</button>
-          </div>
+          <input id="track-filter" aria-label="Filter loaded tracks" hidden />
         </div>
         <div id="playlist-panes" class="playlist-panes" aria-label="Open playlist editors"></div>
         <div class="editor-foot">
           <span id="drag-status" role="status"
-            >Drag the grip to reorder or transfer. Alt/Ctrl/⌘ = copy. Changes stay local.</span
+            >Drag songs to arrange them. Your edits stay here until you save to YouTube.</span
           >
         </div>
       </section>
@@ -228,25 +309,21 @@
         class="sash"
         role="separator"
         tabindex="0"
-        aria-label="Resize commit buffer"
+        aria-label="Resize changes panel"
         aria-orientation="vertical"
       ></div>
-      <aside id="changes-pane" class="changes pane">
+      <aside id="changes-pane" class="changes pane" aria-label="Your changes">
         <div class="pane-title">
-          <h2>PENDING CHANGES</h2>
-          <span id="dirty-count">0</span>
-          <button id="minimize-changes" class="icon-button" aria-label="Minimize commit buffer">
-            −
-          </button>
+          <h2>Your changes</h2>
+          <span id="dirty-count">0</span
+          ><button id="minimize-changes" class="icon-button" aria-label="Hide changes">−</button>
         </div>
+        <p class="hint">Try things out. You can always undo.</p>
         <div id="change-list" class="change-list"></div>
         <div class="commit-actions">
-          <p id="commit-budget" class="hint">YouTube writes only on commit.</p>
-          <button id="review" class="accent wide" disabled>Review commit</button>
-          <p class="hint">
-            Transfers add + verify destinations before source removals. Commits are not atomic;
-            failures stop without automatic retries.
-          </p>
+          <p id="commit-budget" class="hint">Nothing to save yet.</p>
+          <button id="review" class="accent wide" disabled>Review &amp; save</button>
+          <p class="hint">Review first. Nothing goes to YouTube until you confirm.</p>
         </div>
       </aside>
     </main>
@@ -260,45 +337,44 @@
     ></div>
     <section id="console-pane" class="console pane">
       <div class="pane-title">
-        <h2>ACTIVITY / EVENT LOG</h2>
-        <span id="operation-state">IDLE</span><button id="log-clear">Clear log</button>
-        <button id="minimize-console" class="icon-button" aria-label="Minimize activity log">
-          −
-        </button>
+        <h2>Activity</h2>
+        <span id="operation-state">Ready</span><button id="log-clear">Clear log</button
+        ><button id="minimize-console" class="icon-button" aria-label="Hide activity log">−</button>
       </div>
       <p id="status" role="status" aria-live="polite">Ready.</p>
       <progress id="job-progress" hidden></progress>
       <ol id="activity-log" aria-label="Activity log"></ol>
     </section>
     <footer>
-      <span id="version">STATELESS WORKER</span><span id="request-count">0 local requests</span
-      ><span>LOCAL DRAFT ≠ YOUTUBE STATE</span>
+      <span id="task-status" role="status" aria-live="polite">Ready when you are.</span
+      ><span id="version">Local playlist editor</span
+      ><span id="request-count">0 local requests</span>
     </footer>
-    <dialog id="review-dialog">
+    <dialog id="review-dialog" aria-labelledby="review-title">
       <div class="pane-title">
-        <h2>REVIEW / COMMIT</h2>
-        <button id="review-close">Close</button>
+        <h2 id="review-title">Review your changes</h2>
+        <button id="review-close">Back to editing</button>
       </div>
       <div id="review-content"></div>
       <p class="warning">
-        Removals delete playlist entries, not videos. YouTube cannot roll back a multi-playlist
-        commit. If interrupted, reload affected playlists before making another commit.
+        Removed songs leave the playlist, not YouTube. Saving several playlists can partly succeed
+        if interrupted. Keep your draft and use Reconnect &amp; keep edits to check what happened.
       </p>
       <label class="check"
-        ><input id="commit-confirm" type="checkbox" /> I reviewed these additions, removals, and
-        order changes.</label
-      ><button id="commit" class="accent wide" disabled>Commit to YouTube</button>
+        ><input id="commit-confirm" type="checkbox" /> I’ve checked the songs being added, removed,
+        and reordered.</label
+      ><button id="commit" class="accent wide" disabled>Save changes to YouTube</button>
     </dialog>
     <dialog id="info-dialog" aria-labelledby="info-title">
       <div class="pane-title">
-        <h2 id="info-title">WORKSPACE</h2>
+        <h2 id="info-title">Help</h2>
         <button id="info-close">Close</button>
       </div>
       <div id="info-content" class="info-content"></div>
     </dialog>
     <noscript
       ><p class="warning">
-        JavaScript is required. This app uses browser-local storage for your workspace.
+        Enable JavaScript to use this playlist editor and save drafts in your browser.
       </p></noscript
     >
   </body>
